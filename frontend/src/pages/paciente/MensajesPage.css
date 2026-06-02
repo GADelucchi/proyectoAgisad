@@ -1,0 +1,39 @@
+.mensajes-page { padding: 2rem 0; max-width: 700px; }
+.mensajes-page h1 { margin-bottom: 1.5rem; }
+
+.mensajes-nuevo {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.mensajes-nuevo h3 { font-family: var(--font-sans); font-size: 1rem; font-weight: 700; }
+
+.mensajes-ok {
+  font-size: 0.85rem;
+  color: var(--success);
+  background: var(--success-light);
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-sm);
+  margin: 0;
+}
+
+.mensajes-lista { display: flex; flex-direction: column; gap: 0.75rem; }
+
+.mensaje-card { padding: 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; }
+
+.mensaje-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.mensaje-asunto { font-weight: 600; font-size: 0.9rem; color: var(--text-primary); }
+
+.mensaje-respuesta {
+  background: var(--primary-light);
+  border-left: 3px solid var(--primary);
+  padding: 0.75rem;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}

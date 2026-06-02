@@ -1,0 +1,39 @@
+const { Router } = require('express')
+const { requireAuth, requireRoles } = require('../../middlewares/auth.middleware')
+const ctrl = require('./pacientes.controller')
+
+const router = Router()
+
+// GET /api/pacientes?id_medico=X&q=texto
+router.get(
+  '/',
+  requireAuth,
+  requireRoles('medico', 'asistente', 'admin'),
+  ctrl.list
+)
+
+// POST /api/pacientes/medicos/:id_medico/recetas
+router.post(
+  '/medicos/:id_medico/recetas',
+  requireAuth,
+  requireRoles('paciente'),
+  ctrl.requestReceta
+)
+
+// GET /api/pacientes/:id
+router.get(
+  '/:id',
+  requireAuth,
+  requireRoles('paciente', 'medico', 'asistente', 'admin'),
+  ctrl.getOne
+)
+
+// PATCH /api/pacientes/:id
+router.patch(
+  '/:id',
+  requireAuth,
+  requireRoles('paciente', 'admin'),
+  ctrl.patch
+)
+
+module.exports = router

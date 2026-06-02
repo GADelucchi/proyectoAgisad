@@ -1,0 +1,62 @@
+.buscador-page { padding: 2rem 0; }
+
+.buscador-header { margin-bottom: 2rem; }
+.buscador-header h1 { margin-bottom: 0.4rem; }
+
+.buscador-search {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  margin-bottom: 1.75rem;
+}
+
+.buscador-search-icon { color: var(--text-muted); flex-shrink: 0; }
+
+.buscador-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+.buscador-input::placeholder { color: var(--text-muted); }
+
+.buscador-resultados { display: flex; flex-direction: column; gap: 1rem; }
+
+.buscador-empty { color: var(--text-muted); font-size: 0.9rem; padding: 2rem 0; text-align: center; }
+
+.medico-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  gap: 1rem;
+}
+
+.medico-card-info { display: flex; align-items: center; gap: 1rem; flex: 1; }
+
+.medico-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--primary-light);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.medico-card-info h3 { font-family: var(--font-sans); font-size: 1rem; margin: 0 0 2px; }
+.medico-card-info p  { font-size: 0.85rem; margin: 0 0 4px; }
+
+.medico-card-consultorios {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}

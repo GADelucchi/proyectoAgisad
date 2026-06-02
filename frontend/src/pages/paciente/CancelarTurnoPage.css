@@ -1,0 +1,29 @@
+.cancelar-page { padding: 2rem 0; max-width: 640px; }
+.cancelar-page h1 { margin-bottom: 0.4rem; }
+.cancelar-page > p { margin-bottom: 1.5rem; font-size: 0.9rem; }
+
+.cancelar-empty { padding: 2rem; text-align: center; }
+
+.cancelar-turnos { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.5rem; }
+
+.cancelar-turno-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.1rem 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--transition);
+}
+.cancelar-turno-card p { margin: 2px 0 0; font-size: 0.85rem; }
+.cancelar-turno-card.selected { border-color: var(--error); background: var(--error-light); }
+
+.cancelar-motivo {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}

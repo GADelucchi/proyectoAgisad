@@ -1,0 +1,86 @@
+.receta-page { padding: 2rem 0; max-width: 760px; }
+.receta-page h1 { margin-bottom: 1.5rem; }
+
+.receta-card {
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.receta-tipo-opciones {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.receta-tipo-opcion {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0.75rem 1.25rem;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+}
+.receta-tipo-opcion input { display: none; }
+.receta-tipo-opcion.selected {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
+.receta-tipo-label { font-weight: 700; font-size: 0.95rem; color: var(--text-primary); }
+.receta-tipo-sub   { font-size: 0.8rem; color: var(--text-muted); }
+
+.receta-instruccion {
+  font-size: 0.88rem;
+  background: var(--warning-light);
+  border-left: 3px solid var(--warning);
+  padding: 0.75rem 1rem;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  margin: 0;
+}
+.receta-instruccion p { margin: 0; }
+
+.receta-input-row { display: flex; gap: 1rem; flex-wrap: wrap; }
+
+.receta-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem;
+}
+
+.receta-lista-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.9rem;
+}
+
+.receta-lista-dosis { color: var(--text-muted); }
+
+.receta-lista-remove {
+  background: none;
+  border: none;
+  color: var(--error);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+}
+.receta-lista-remove:hover { background: var(--error-light); }
+
+.receta-confirmacion {
+  padding: 3rem 2rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  max-width: 480px;
+}
+.receta-confirmacion h2 { color: var(--success); }

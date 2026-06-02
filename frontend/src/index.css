@@ -1,0 +1,210 @@
+/* ============================================
+   Agisad — Estilos globales + variables de tema
+   ============================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --bg-base:        #f8fafc;
+  --surface:        #f1f5f9;
+  --surface-raised: #ffffff;
+  --surface-elevated:#ffffff;
+  --primary:        #0e7c7b;
+  --primary-hover:  #0b6665;
+  --primary-light:  #d9f3f2;
+  --accent:         #f97316;
+  --accent-hover:   #ea580c;
+  --accent-light:   #ffedd5;
+  --error:          #c0392b;
+  --error-light:    #fdecea;
+  --success:        #27ae60;
+  --success-light:  #e9f7ef;
+  --warning:        #e67e22;
+  --warning-light:  #fef9ec;
+  --text-primary:   #0f172a;
+  --text-secondary: #475569;
+  --text-muted:     #64748b;
+  --text-tertiary:  #475569;
+  --border:         #e2e8f0;
+  --border-strong:  #cbd5e1;
+  --shadow-sm:      0 8px 24px rgba(0,0,0,.12);
+  --shadow-md:      0 8px 24px rgba(0,0,0,.12);
+  --shadow-lg:      0 8px 24px rgba(0,0,0,0.12);
+  --radius-sm:      6px;
+  --radius-md:      12px;
+  --radius-lg:      18px;
+  --font-sans:      'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-heading:   'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --transition:     150ms ease;
+}
+
+[data-theme="dark"] {
+  --bg-base:        #0f1117;
+  --surface:        #161b22;
+  --surface-raised: #1c2333;
+  --surface-elevated:#1c2333;
+  --primary:        #14b8b7;
+  --primary-hover:  #1dd4d2;
+  --primary-light:  rgba(20,184,183,.18);
+  --accent:         #fb923c;
+  --accent-hover:   #fdba74;
+  --accent-light:   rgba(251,146,60,.18);
+  --error:          #e07070;
+  --error-light:    #3a1818;
+  --success:        #6bc57a;
+  --success-light:  #1a3020;
+  --warning:        #f0a040;
+  --warning-light:  #3a2808;
+  --text-primary:   #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted:     #64748b;
+  --text-tertiary:  #475569;
+  --border:         rgba(255,255,255,.07);
+  --border-strong:  rgba(255,255,255,.12);
+  --shadow-sm:      0 8px 24px rgba(14,124,123,.25);
+  --shadow-md:      0 8px 24px rgba(14,124,123,.25);
+  --shadow-lg:      0 8px 24px rgba(14,124,123,.25);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+@media (min-width: 1024px) {
+  html { font-size: 18px; }
+
+  h1 { font-size: 2.45rem !important; }
+  h2 { font-size: 1.95rem !important; }
+  h3 { font-size: 1.2rem !important; }
+  h4 { font-size: 1.2rem !important; }
+
+  p { font-size: 1.15rem !important; }
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-base);
+  background-image:
+    radial-gradient(circle at 12% -10%, rgba(14,124,123,.16), transparent 34%),
+    radial-gradient(circle at 88% 10%, rgba(249,115,22,.10), transparent 28%);
+  color: var(--text-primary);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color var(--transition), color var(--transition);
+  width: 100%;
+  overflow-x: hidden;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+h1 { font-size: 2.25rem; }
+h2 { font-size: 1.75rem; }
+h3 { font-size: 1.35rem; }
+h4 { font-size: 1.1rem; }
+p  { color: var(--text-secondary); line-height: 1.65; }
+a  { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.container {
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+
+.surface {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.surface-raised {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.badge-success { background: var(--success-light); color: var(--success); }
+.badge-error   { background: var(--error-light);   color: var(--error); }
+.badge-warning { background: var(--warning-light); color: var(--warning); }
+.badge-primary { background: var(--primary-light); color: var(--primary); }
+.badge-muted   { background: var(--border);        color: var(--text-secondary); }
+
+.table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.table th {
+  padding: 0.6rem 1rem;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+.table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  vertical-align: middle;
+}
+.table tr:last-child td { border-bottom: none; }
+
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.form-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.form-input, .form-select, .form-textarea {
+  width: 100%;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+.form-input::placeholder { color: var(--text-muted); }
+.form-textarea { resize: vertical; min-height: 90px; }
+
+.divider { height: 1px; background: var(--border); border: none; margin: 1.5rem 0; }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }

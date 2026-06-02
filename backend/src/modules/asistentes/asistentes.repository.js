@@ -1,0 +1,124 @@
+const { query } = require('../../db/query')
+
+/**
+ * Lista los asistentes de un médico junto con sus permisos.
+ * La relación se establece a través de asistente_permisos.
+ */
+async function listAsistentesByMedico(idMedico) {
+  return query(
+    `SELECT
+       a.id_asistente,
+       a.nombre,
+       a.apellido,
+       u.email,
+       u.username,
+       u.activo,
+       ap.agenda,
+       ap.pacientes,
+       ap.mensajes,
+       ap.recetas,
+       ap.configuracion,
+       ap.bloqueado
+     FROM asistente_permisos  ap
+     JOIN asistentes          a  ON a.id_asistente = ap.id_asistente
+     JOIN usuarios            u  ON u.id_usuario   = a.id_usuario
+     WHERE ap.id_medico = :idMedico
+     ORDER BY a.apellido, a.nombre`,
+    { idMedico }
+  )
+}
+
+/**
+ * Detalle de un asistente.
+ */
+async function findAsistenteById(idAsistente) {
+  const rows = await query(
+    `SELECT
+       a.id_asistente,
+       a.nombre,
+       a.apellido,
+       a.id_usuario,
+       u.email,
+       u.username,
+       u.activo
+     FROM asistentes a
+     JOIN usuarios   u ON u.id_usuario = a.id_usuario
+     WHERE a.id_asistente = :idAsistente
+     LIMIT 1`,
+    { idAsistente }
+  )
+  return rows[0] || null
+}
+
+/**
+ * Inserta o actualiza los permisos de un asistente para un médico.
+ */
+async function upsertPermisos(idAsistente, idMedico, permisos) {
+  const {
+    agenda = 1,
+    pacientes = 0,
+    mensajes = 0,
+    recetas = 0,
+    configuracion = 0,
+    bloqueado = 0,
+  } = permisos
+
+  await query(
+    `INSERT INTO asistente_permisos
+       (id_asistente, id_medico, agenda, pacientes, mensajes, recetas, configuracion, bloqueado)
+     VALUES (:idAsistente, :idMedico, :agenda, :pacientes, :mensajes, :recetas, :configuracion, :bloqueado)
+     ON DUPLICATE KEY UPDATE
+       agenda        = VALUES(agenda),
+       pacientes     = VALUES(pacientes),
+       mensajes      = VALUES(mensajes),
+       recetas       = VALUES(recetas),
+       configuracion = VALUES(configuracion),
+       bloqueado     = VALUES(bloqueado)`,
+    { idAsistente, idMedico, agenda, pacientes, mensajes, recetas, configuracion, bloqueado }
+  )
+}
+
+async function findMedicoIdByUserId(idUsuario) {
+  const rows = await query(
+    `SELECT id_medico
+     FROM medicos
+     WHERE id_usuario = :idUsuario
+     LIMIT 1`,
+    { idUsuario }
+  )
+  return rows[0]?.id_medico || null
+}
+
+async function findAsistenteIdByUserId(idUsuario) {
+  const rows = await query(
+    `SELECT id_asistente
+     FROM asistentes
+     WHERE id_usuario = :idUsuario
+     LIMIT 1`,
+    { idUsuario }
+  )
+  return rows[0]?.id_asistente || null
+}
+
+async function hasAsistenteAccessToMedico({ idUsuario, idMedico }) {
+  const rows = await query(
+    `SELECT 1 AS ok
+     FROM asistentes a
+     INNER JOIN asistente_permisos ap ON ap.id_asistente = a.id_asistente
+     WHERE a.id_usuario = :idUsuario
+       AND ap.id_medico = :idMedico
+       AND ap.bloqueado = 0
+     LIMIT 1`,
+    { idUsuario, idMedico }
+  )
+  return Boolean(rows[0])
+}
+
+module.exports = {
+  listAsistentesByMedico,
+  findAsistenteById,
+  upsertPermisos,
+  findMedicoIdByUserId,
+  findAsistenteIdByUserId,
+  hasAsistenteAccessToMedico,
+}

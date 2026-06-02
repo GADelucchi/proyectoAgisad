@@ -1,0 +1,209 @@
+.admin-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.admin-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1.5rem;
+}
+
+.admin-tabs {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+
+.admin-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.admin-hero h1 {
+  margin-top: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.admin-hero p {
+  max-width: 56rem;
+}
+
+.admin-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.admin-kpi {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.admin-kpi-icon {
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 999px;
+  background: var(--primary-light);
+  color: var(--primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-kpi-value {
+  font-size: 1.7rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.admin-kpi-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.admin-kpi p {
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1rem;
+}
+
+.admin-users-layout {
+  display: grid;
+  grid-template-columns: 1.1fr 1.9fr;
+  gap: 1rem;
+}
+
+.admin-finance-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+.admin-users-list,
+.admin-users-detail {
+  min-height: 560px;
+}
+
+.admin-filters {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr 1fr;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.admin-users-scroll {
+  overflow: auto;
+}
+
+.admin-row-selected {
+  background: color-mix(in srgb, var(--primary-light) 45%, transparent);
+}
+
+.admin-users-list tbody tr {
+  cursor: pointer;
+}
+
+.admin-row-sub {
+  margin-top: 0.2rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.admin-kv-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.admin-kv {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.75rem;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.admin-kv span {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.admin-kv strong {
+  font-size: 0.92rem;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.admin-relation-block h4 {
+  margin-top: 0.35rem;
+  margin-bottom: 0.45rem;
+}
+
+.admin-card {
+  padding: 1.25rem;
+}
+
+.admin-card h2 {
+  margin-bottom: 0.8rem;
+}
+
+.admin-card ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--text-secondary);
+}
+
+.admin-card li + li {
+  margin-top: 0.5rem;
+}
+
+.admin-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+@media (max-width: 1024px) {
+  .admin-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-grid,
+  .admin-hero,
+  .admin-users-layout,
+  .admin-kv-grid,
+  .admin-filters {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-kpis {
+    grid-template-columns: 1fr;
+  }
+}

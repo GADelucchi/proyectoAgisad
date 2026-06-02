@@ -1,0 +1,11 @@
+.historial-tab { display: flex; flex-direction: column; gap: 1.25rem; }
+
+.historial-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.historial-header h3 { font-family: var(--font-sans); font-size: 1rem; font-weight: 700; margin-bottom: 2px; }
+
+.historial-tabla-wrap { overflow-x: auto; }

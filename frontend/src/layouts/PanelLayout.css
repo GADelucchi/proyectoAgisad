@@ -1,0 +1,16 @@
+.panel-layout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.panel-main {
+  flex: 1;
+  padding: 2rem 0;
+}
+
+@media (min-width: 1200px) {
+  .panel-main .container {
+    max-width: 1440px;
+  }
+}
