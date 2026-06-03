@@ -20,6 +20,7 @@ const MIGRATIONS = [
   '003_relaciones_negocio.sql',
   '004_admin_finanzas.sql',
   '005_schema_alignment_y_recetas.sql',
+  '006_add_ultimo_login.sql',
 ]
 
 async function ensureLogTable(conn) {
