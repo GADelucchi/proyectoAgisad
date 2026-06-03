@@ -25,7 +25,7 @@ export function AuthProvider({ children }) {
   })
 
   async function login(email, password) {
-    console.info('[AuthContext.login] intento', { email, demoMode: DEMO_MODE })
+    console.info('[AuthContext.login] intento', { email })
 
     if (DEMO_MODE) {
       const user = MOCK_USERS[email]

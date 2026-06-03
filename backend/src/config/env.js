@@ -29,6 +29,28 @@ function asBoolean(value, name, defaultValue = undefined) {
   throw new Error(`Variable de entorno inválida: ${name}`)
 }
 
+function asTrustProxy(value, name, defaultValue = false) {
+  if (value === undefined || value === null || value === '') {
+    return defaultValue
+  }
+
+  const normalized = String(value).trim().toLowerCase()
+
+  if (['true', 'yes', 'y', 'on'].includes(normalized)) return true
+  if (['false', 'no', 'n', 'off'].includes(normalized)) return false
+
+  const asNumberValue = Number(normalized)
+  if (Number.isInteger(asNumberValue) && asNumberValue >= 0) {
+    return asNumberValue
+  }
+
+  if (normalized.length > 0) {
+    return normalized
+  }
+
+  throw new Error(`Variable de entorno inválida: ${name}`)
+}
+
 function requiredString(name) {
   const value = process.env[name]
   if (value === undefined || value === null || value === '') {
@@ -65,6 +87,7 @@ const env = {
   APP_TIMEZONE: requiredString('APP_TIMEZONE'),
   APP_LOCALE: requiredString('APP_LOCALE'),
   CORS_ALLOWED_ORIGINS: requiredString('CORS_ALLOWED_ORIGINS'),
+  TRUST_PROXY: asTrustProxy(process.env.TRUST_PROXY, 'TRUST_PROXY', false),
 }
 
 module.exports = env

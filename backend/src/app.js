@@ -7,6 +7,8 @@ const { notFound, errorHandler } = require('./middlewares/error.middleware')
 
 const app = express()
 
+app.set('trust proxy', env.TRUST_PROXY)
+
 const allowedOrigins = new Set(
   env.CORS_ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
 )
