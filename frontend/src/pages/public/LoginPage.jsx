@@ -106,7 +106,6 @@ export default function LoginPage() {
 
         <div className="auth-demo">
           <p className="auth-demo-title">Cuentas demo</p>
-          <code>admin@demo.com</code>
           <code>medico@demo.com</code>
           <code>paciente@demo.com</code>
           <code>asistente@demo.com</code>

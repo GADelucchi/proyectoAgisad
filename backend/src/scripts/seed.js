@@ -5,7 +5,7 @@
  * Inserta:
  *  - Provincia + Ciudad demo
  *  - Clínica demo
- *  - Usuarios demo: admin@demo.com, medico@demo.com, paciente@demo.com, asistente@demo.com, gerente@demo.com
+ *  - Usuarios demo: medico@demo.com, paciente@demo.com, asistente@demo.com, gerente@demo.com
  *    (contraseña: demo1234)
  *  - Registros en medicos, pacientes, asistentes, medico_clinicas
  */
@@ -72,13 +72,6 @@ async function seed() {
     )
 
     const hash = await bcrypt.hash(DEMO_PASSWORD, 10)
-
-    // ── Usuario admin ───────────────────────────────────────────────
-    await conn.execute(
-      `INSERT IGNORE INTO usuarios (id_rol, username, email, password_hash, email_verificado, activo)
-       VALUES (?, 'admin_demo', 'admin@demo.com', ?, 1, 1)`,
-      [id_rol_admin, hash]
-    )
 
     // ── Usuario médico ───────────────────────────────────────────────
     await conn.execute(
@@ -200,7 +193,6 @@ async function seed() {
 
     await conn.commit()
     console.log('✅ Seed demo completado')
-    console.log('   admin@demo.com     / demo1234  → rol admin')
     console.log('   medico@demo.com     / demo1234  → rol médico')
     console.log('   paciente@demo.com   / demo1234  → rol paciente')
     console.log('   asistente@demo.com  / demo1234  → rol asistente')

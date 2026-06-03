@@ -7,7 +7,6 @@ const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true'
 
 // Mock de usuario — reemplazar con llamadas reales al backend
 const MOCK_USERS = {
-  'admin@demo.com':     { id: 0, rol: 'admin',     nombre: 'Admin Demo',          plan: null },
   'medico@demo.com':    { id: 1, rol: 'medico',    nombre: 'Dr. Demo Médico',     plan: 'profesional' },
   'paciente@demo.com':  { id: 2, rol: 'paciente',  nombre: 'Paciente Demo',       plan: null },
   'asistente@demo.com': { id: 3, rol: 'asistente', nombre: 'Asistente Demo', username: 'sec.ana', plan: null },
