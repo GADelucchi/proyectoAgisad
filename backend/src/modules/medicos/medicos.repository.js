@@ -2,11 +2,11 @@ const { query } = require('../../db/query')
 
 async function listMedicos({ q, idEspecialidad, idCiudad }) {
   const sql = `
-    SELECT DISTINCT
+    SELECT
       m.id_medico,
       m.nombre,
       m.apellido,
-      m.matricula_prov,
+      m.matricula,
       m.telefono,
       m.id_ciudad,
       c.nombre AS ciudad,
@@ -14,9 +14,8 @@ async function listMedicos({ q, idEspecialidad, idCiudad }) {
     FROM medicos m
     INNER JOIN usuarios u ON u.id_usuario = m.id_usuario
     LEFT JOIN ciudades c ON c.id_ciudad = m.id_ciudad
-    LEFT JOIN medico_especialidades me ON me.id_medico = m.id_medico
     WHERE 1=1
-      AND (:idEspecialidad IS NULL OR me.id_especialidad = :idEspecialidad)
+      AND (:idEspecialidad IS NULL OR m.id_especialidad = :idEspecialidad)
       AND (:idCiudad IS NULL OR m.id_ciudad = :idCiudad)
       AND (
         :q IS NULL

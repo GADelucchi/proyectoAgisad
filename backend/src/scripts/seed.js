@@ -91,18 +91,13 @@ async function seed() {
     )
     await conn.execute(
       `INSERT IGNORE INTO medicos
-         (id_usuario, id_ciudad, matricula_prov, nombre, apellido, dni)
-       VALUES (?, ?, 'MP-12345', 'Carlos', 'García', '20111222334')`,
-      [id_usuario_medico, id_ciudad]
+         (id_usuario, id_especialidad, id_ciudad, matricula, nombre, apellido)
+       VALUES (?, ?, ?, 'MP-12345', 'Carlos', 'García')`,
+      [id_usuario_medico, id_especialidad, id_ciudad]
     )
     const [[{ id_medico }]] = await conn.execute(
       `SELECT id_medico FROM medicos WHERE id_usuario = ? LIMIT 1`,
       [id_usuario_medico]
-    )
-    // Especialidad via tabla relacional
-    await conn.execute(
-      `INSERT IGNORE INTO medico_especialidades (id_medico, id_especialidad) VALUES (?, ?)`,
-      [id_medico, id_especialidad]
     )
     await conn.execute(
       `INSERT IGNORE INTO medico_clinicas (id_medico, id_clinica) VALUES (?, ?)`,

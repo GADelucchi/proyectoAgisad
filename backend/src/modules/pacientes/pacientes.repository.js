@@ -92,8 +92,7 @@ async function findMedicoRecetaById(idMedico) {
        e.nombre AS especialidad
      FROM medicos m
      INNER JOIN usuarios u ON u.id_usuario = m.id_usuario
-     LEFT JOIN medico_especialidades me ON me.id_medico = m.id_medico
-     LEFT JOIN especialidades e ON e.id_especialidad = me.id_especialidad
+     LEFT JOIN especialidades e ON e.id_especialidad = m.id_especialidad
      WHERE m.id_medico = :idMedico
        AND u.activo = 1
      LIMIT 1`,

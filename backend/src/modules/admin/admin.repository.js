@@ -93,7 +93,7 @@ async function findUsuarioBaseById(idUsuario) {
       os.nombre AS paciente_obra_social,
       p.nro_obra_social AS paciente_nro_obra_social,
       m.id_medico,
-      m.matricula_prov AS matricula,
+      m.matricula AS matricula,
       m.nombre AS medico_nombre,
       m.apellido AS medico_apellido,
       m.telefono AS medico_telefono,
@@ -121,8 +121,7 @@ async function findUsuarioBaseById(idUsuario) {
     LEFT JOIN pacientes p ON p.id_usuario = u.id_usuario
     LEFT JOIN obras_sociales os ON os.id_obra_social = p.id_obra_social
     LEFT JOIN medicos m ON m.id_usuario = u.id_usuario
-    LEFT JOIN medico_especialidades mesp ON mesp.id_medico = m.id_medico
-    LEFT JOIN especialidades e ON e.id_especialidad = mesp.id_especialidad
+    LEFT JOIN especialidades e ON e.id_especialidad = m.id_especialidad
     LEFT JOIN ciudades cmed ON cmed.id_ciudad = m.id_ciudad
     LEFT JOIN provincias pmed ON pmed.id_provincia = cmed.id_provincia
     LEFT JOIN asistentes a ON a.id_usuario = u.id_usuario
@@ -149,7 +148,7 @@ async function findPacienteMedicosVinculados(idPaciente) {
     `SELECT
       pv.id_medico,
       CONCAT(m.nombre, ' ', m.apellido) AS medico,
-      m.matricula_prov AS matricula,
+      m.matricula AS matricula,
       c.nombre AS clinica,
       DATE_FORMAT(pv.ultima_atencion, '%d/%m/%Y %H:%i') AS ultima_atencion,
       pv.estado
@@ -248,7 +247,7 @@ async function findGerenteMedicos(idGerente) {
     `SELECT DISTINCT
       m.id_medico,
       CONCAT(m.nombre, ' ', m.apellido) AS medico,
-      m.matricula_prov AS matricula,
+      m.matricula AS matricula,
       c.nombre AS clinica,
       CASE WHEN gmb.id_medico IS NULL THEN 0 ELSE gmb.cubre_membresia END AS cubierto_por_gerente,
       CASE WHEN mb.estado IS NULL THEN 'inexistente' ELSE mb.estado END AS suscripcion_estado

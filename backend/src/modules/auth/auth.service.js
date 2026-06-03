@@ -249,30 +249,21 @@ async function registerMedico(input) {
 
     const [medicoResult] = await conn.execute(
       `INSERT INTO medicos (
-        id_usuario, id_ciudad, matricula_prov, nombre, apellido, dni, telefono, direccion, sexo, fecha_nac, bio, foto_url, acepta_tyc, acepta_tyc_fecha
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
+        id_usuario, id_especialidad, id_ciudad, matricula, nombre, apellido, telefono, bio, foto_url, acepta_tyc, acepta_tyc_fecha
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
       [
         userId,
+        idEspecialidad,
         idCiudad,
         input.matricula,
         input.nombre,
         input.apellido,
-        input.dni,
         input.telefono || null,
-        input.direccion || null,
-        input.sexo || null,
-        input.fecha_nac || null,
         input.bio || null,
         input.foto_url || null,
         input.acepta_tyc ? 1 : 0,
         input.acepta_tyc ? new Date() : null,
       ]
-    )
-
-    await conn.execute(
-      `INSERT IGNORE INTO medico_especialidades (id_medico, id_especialidad)
-       VALUES (?, ?)`,
-      [medicoResult.insertId, idEspecialidad]
     )
 
     await conn.commit()
