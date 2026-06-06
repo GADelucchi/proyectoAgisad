@@ -7,7 +7,12 @@ import {
 
 export default function SmartDateInput({ value, onChange, className = 'form-input', id, name, placeholder = 'DD/MM/AAAA' }) {
   const [isTouchDevice, setIsTouchDevice] = useState(false)
+  const [draftValue, setDraftValue] = useState('')
   const displayValue = useMemo(() => displayDateFromIso(value), [value])
+
+  useEffect(() => {
+    setDraftValue(displayValue)
+  }, [displayValue])
 
   useEffect(() => {
     const media = window.matchMedia('(pointer: coarse)')
@@ -38,11 +43,20 @@ export default function SmartDateInput({ value, onChange, className = 'form-inpu
       className={className}
       inputMode="numeric"
       placeholder={placeholder}
-      value={displayValue}
+      value={draftValue}
       onChange={e => {
         const formatted = formatDateDisplay(e.target.value)
+        setDraftValue(formatted)
         const isoValue = isoDateFromDisplay(formatted)
-        onChange({ target: { name, value: isoValue } })
+        if (isoValue || formatted === '') {
+          onChange({ target: { name, value: isoValue } })
+        }
+      }}
+      onBlur={() => {
+        const isoValue = isoDateFromDisplay(draftValue)
+        if (!isoValue) {
+          setDraftValue(displayValue)
+        }
       }}
     />
   )

@@ -1,8 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import Button from '../../../components/ui/Button'
-import { getClinicsByDoctor, summarizeClinicDays } from '../../../mock/demoData'
+import { useAuth } from '../../../context/AuthContext'
+import { medicosApi } from '../../../services/medicos.api'
+import { turnosApi } from '../../../services/turnos.api'
+import {
+  createAppointment,
+  getBookedSlotsByDoctorClinicDate,
+  getClinicsByDoctor,
+  getDemoDoctorById,
+  summarizeClinicDays,
+} from '../../../mock/demoData'
 import { formatDateDdMmYyyy, formatTime24h } from '../../../utils/dateFormat'
 import './WizardTurnoPage.css'
 
@@ -10,7 +19,7 @@ const TIPOS_CONSULTA = [
   { id: 'seguimiento', label: 'Seguimiento',  desc: 'Ya te atendiste con el médico',    duracion: 30 },
   { id: 'primera',     label: 'Primera vez',  desc: 'Primera consulta con el médico',   duracion: 60 },
 ]
-const STEPS = ['Consultorio', 'Tipo de consulta', 'Fecha', 'Horario', 'Confirmación']
+const STEPS = ['Consultorio', 'Tipo de consulta', 'Fecha y horario', 'Confirmación']
 const DAY_TO_INDEX = { Dom: 0, Lun: 1, Mar: 2, Mie: 3, Jue: 4, Vie: 5, Sab: 6 }
 
 function toIsoDate(date) {
@@ -83,27 +92,67 @@ function StepBar({ current }) {
 export default function WizardTurnoPage() {
   const { medicoId } = useParams()
   const navigate = useNavigate()
+  const { usuario, demoMode } = useAuth()
   const [consultorios, setConsultorios] = useState(() => getClinicsByDoctor(medicoId))
   const [step, setStep] = useState(0)
   const [sel, setSel] = useState({ consultorio: null, tipo: null, fecha: null, horario: null })
+  const [submitError, setSubmitError] = useState('')
+
+  const medico = useMemo(() => getDemoDoctorById(medicoId), [medicoId])
+  const patientId = usuario?.idUsuario || usuario?.id || null
 
   useEffect(() => {
+    if (!demoMode) {
+      let cancelled = false
+      medicosApi
+        .listClinicasByMedico(medicoId)
+        .then((rows) => {
+          if (!cancelled) {
+            setConsultorios(Array.isArray(rows) ? rows : [])
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setConsultorios([])
+        })
+
+      return () => {
+        cancelled = true
+      }
+    }
+
     const refresh = () => setConsultorios(getClinicsByDoctor(medicoId))
     window.addEventListener('agisad-demo-data-changed', refresh)
     return () => window.removeEventListener('agisad-demo-data-changed', refresh)
-  }, [medicoId])
+  }, [medicoId, demoMode])
 
-  const horariosDisponibles = sel.consultorio && sel.fecha
-    ? Array.from(new Set(
+  function getSlotsForDate(date) {
+    if (!sel.consultorio || !date) return []
+    return Array.from(new Set(
       sel.consultorio.rangos
-        .filter(r => isRangeAvailableOnDate(r, sel.fecha))
+        .filter(r => isRangeAvailableOnDate(r, date))
         .flatMap(r => buildSlots(r.inicio, r.fin))
     ))
-    : []
+  }
 
-  // Genera los días disponibles del mes actual según rangos del consultorio
-  function getDiasDisponibles() {
-    const dias = []
+  const dateIso = sel.fecha ? toIsoDate(sel.fecha) : null
+  const allSlotsOfDay = sel.fecha ? getSlotsForDate(sel.fecha) : []
+  const bookedSlots = dateIso
+    ? new Set(
+      demoMode
+        ? getBookedSlotsByDoctorClinicDate({
+          doctorId: medicoId,
+          clinicId: sel.consultorio?.id,
+          dateIso,
+        })
+        : []
+    )
+    : new Set()
+
+  const horariosDisponibles = allSlotsOfDay.filter(slot => !bookedSlots.has(slot))
+
+  // Genera disponibilidad de días del mes actual teniendo en cuenta turnos ocupados
+  function getDisponibilidadMes() {
+    const disponibilidad = {}
     const hoy = new Date()
     const anio = hoy.getFullYear()
     const mes  = hoy.getMonth()
@@ -111,10 +160,27 @@ export default function WizardTurnoPage() {
 
     for (let d = hoy.getDate(); d <= totalDias; d++) {
       const fecha = new Date(anio, mes, d)
-      const disponible = sel.consultorio?.rangos?.some(r => isRangeAvailableOnDate(r, fecha))
-      if (disponible) dias.push(fecha)
+      const dateIso = toIsoDate(fecha)
+      const slots = getSlotsForDate(fecha)
+      if (!slots.length) continue
+
+      const booked = new Set(
+        getBookedSlotsByDoctorClinicDate({
+          doctorId: medicoId,
+          clinicId: sel.consultorio?.id,
+          dateIso,
+        })
+      )
+      const libres = slots.filter(slot => !booked.has(slot))
+
+      disponibilidad[d] = {
+        fecha,
+        total: slots.length,
+        libres: libres.length,
+      }
     }
-    return dias
+
+    return disponibilidad
   }
 
   function avanzar() { if (step < STEPS.length - 1) setStep(s => s + 1) }
@@ -123,9 +189,8 @@ export default function WizardTurnoPage() {
   const puedeAvanzar =
     (step === 0 && sel.consultorio) ||
     (step === 1 && sel.tipo) ||
-    (step === 2 && sel.fecha) ||
-    (step === 3 && sel.horario) ||
-    step === 4
+    (step === 2 && sel.fecha && sel.horario) ||
+    step === 3
 
   // ── Paso 0: Consultorio ─────────────────────────────────────────────────
   function renderConsultorio() {
@@ -193,9 +258,9 @@ export default function WizardTurnoPage() {
     )
   }
 
-  // ── Paso 2: Fecha ────────────────────────────────────────────────────────
-  function renderFecha() {
-    const disponibles = getDiasDisponibles()
+  // ── Paso 2: Fecha y horario ───────────────────────────────────────────────
+  function renderFechaHorario() {
+    const disponibilidad = getDisponibilidadMes()
     const hoy = new Date()
     const anio = hoy.getFullYear()
     const mes  = hoy.getMonth()
@@ -208,74 +273,85 @@ export default function WizardTurnoPage() {
     for (let i = 0; i < primerDia; i++) celdas.push(null)
     for (let d = 1; d <= totalDias; d++) celdas.push(d)
 
-    const esDisponible = d => disponibles.some(f => f.getDate() === d)
+    const esDisponible = d => (disponibilidad[d]?.libres || 0) > 0
+    const esCompleto = d => (disponibilidad[d]?.total || 0) > 0 && (disponibilidad[d]?.libres || 0) === 0
     const esHoy = d => d === hoy.getDate()
     const esSeleccionado = d => sel.fecha?.getDate() === d
 
     return (
       <div>
-        <h2 className="wizard-step-title"><span className="wizard-step-num">3</span> Elegí fecha</h2>
-        <p>Solo se muestran los días disponibles del consultorio seleccionado.</p>
-        <div className="wizard-calendario surface-raised">
-          <div className="wizard-cal-header">
-            <span>{meses[mes]} {anio}</span>
+        <h2 className="wizard-step-title"><span className="wizard-step-num">3</span> Elegí fecha y horario</h2>
+        <p>Los días en gris están completos. Al seleccionar día, vas a ver horarios a la derecha (o debajo en mobile).</p>
+
+        <div className="wizard-fecha-horario-grid">
+          <div className="wizard-calendario surface-raised">
+            <div className="wizard-cal-header">
+              <span>{meses[mes]} {anio}</span>
+            </div>
+            <div className="wizard-cal-grid">
+              {diasSemana.map(d => <div key={d} className="wizard-cal-dow">{d}</div>)}
+              {celdas.map((d, i) => {
+                if (!d) return <div key={`e-${i}`} />
+                const disp = esDisponible(d)
+                const full = esCompleto(d)
+                const hoyFlag = esHoy(d)
+                const selFlag = esSeleccionado(d)
+
+                return (
+                  <button
+                    key={d}
+                    disabled={!disp}
+                    className={`wizard-cal-dia ${disp ? 'disponible' : 'no-disponible'} ${full ? 'completo' : ''} ${hoyFlag ? 'hoy' : ''} ${selFlag ? 'seleccionado' : ''}`}
+                    onClick={() => disp && setSel(prev => ({ ...prev, fecha: new Date(anio, mes, d), horario: null }))}
+                  >
+                    {d}
+                  </button>
+                )
+              })}
+            </div>
           </div>
-          <div className="wizard-cal-grid">
-            {diasSemana.map(d => <div key={d} className="wizard-cal-dow">{d}</div>)}
-            {celdas.map((d, i) => {
-              if (!d) return <div key={`e-${i}`} />
-              const disp = esDisponible(d)
-              const hoyFlag = esHoy(d)
-              const selFlag = esSeleccionado(d)
-              return (
-                <button
-                  key={d}
-                  disabled={!disp}
-                  className={`wizard-cal-dia ${disp ? 'disponible' : 'no-disponible'} ${hoyFlag ? 'hoy' : ''} ${selFlag ? 'seleccionado' : ''}`}
-                  onClick={() => disp && setSel(prev => ({ ...prev, fecha: new Date(anio, mes, d), horario: null }))}
-                >
-                  {d}
-                </button>
-              )
-            })}
+
+          <div className="wizard-horarios-panel surface-raised">
+            <h3>Horarios disponibles</h3>
+            {!sel.fecha && (
+              <p className="wizard-no-disponible">Seleccioná una fecha para ver horarios.</p>
+            )}
+
+            {sel.fecha && (
+              <>
+                <p className="wizard-horarios-fecha">{formatDateDdMmYyyy(sel.fecha)}</p>
+                <div className="wizard-horarios">
+                  {allSlotsOfDay.map(h => {
+                    const ocupado = bookedSlots.has(h)
+                    return (
+                      <button
+                        key={h}
+                        disabled={ocupado}
+                        className={`wizard-horario-btn ${sel.horario === h ? 'selected' : ''} ${ocupado ? 'ocupado' : ''}`}
+                        onClick={() => !ocupado && setSel(prev => ({ ...prev, horario: h }))}
+                      >
+                        {formatTime24h(h)}
+                      </button>
+                    )
+                  })}
+
+                  {allSlotsOfDay.length === 0 && (
+                    <p className="wizard-no-disponible">No hay turnos configurados para esta fecha.</p>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
     )
   }
 
-  // ── Paso 3: Horario ──────────────────────────────────────────────────────
-  function renderHorario() {
-    return (
-      <div>
-        <h2 className="wizard-step-title">
-          <span className="wizard-step-num" style={{ background: 'var(--accent)', color: '#fff' }}>●</span>
-          &nbsp;Horarios disponibles
-        </h2>
-        <p>{formatDateDdMmYyyy(sel.fecha)}</p>
-        <div className="wizard-horarios">
-          {horariosDisponibles.map(h => (
-            <button
-              key={h}
-              className={`wizard-horario-btn ${sel.horario === h ? 'selected' : ''}`}
-              onClick={() => setSel(prev => ({ ...prev, horario: h }))}
-            >
-              {formatTime24h(h)}
-            </button>
-          ))}
-          {horariosDisponibles.length === 0 && (
-            <p className="wizard-no-disponible">No hay horarios disponibles para la fecha elegida.</p>
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  // ── Paso 4: Confirmación ─────────────────────────────────────────────────
+  // ── Paso 3: Confirmación ─────────────────────────────────────────────────
   function renderConfirmacion() {
     return (
       <div className="wizard-confirmacion">
-        <h2 className="wizard-step-title"><span className="wizard-step-num">5</span> Confirmá tu turno</h2>
+        <h2 className="wizard-step-title"><span className="wizard-step-num">4</span> Confirmá tu turno</h2>
         <div className="surface-raised wizard-resumen">
           <div className="wizard-resumen-row"><span>Consultorio</span><strong>{sel.consultorio?.nombre}</strong></div>
           <div className="wizard-resumen-row"><span>Tipo</span><strong>{sel.tipo?.label} — {sel.tipo?.duracion} min</strong></div>
@@ -289,10 +365,42 @@ export default function WizardTurnoPage() {
     )
   }
 
-  const PASOS_RENDER = [renderConsultorio, renderTipo, renderFecha, renderHorario, renderConfirmacion]
+  const PASOS_RENDER = [renderConsultorio, renderTipo, renderFechaHorario, renderConfirmacion]
+
+  async function confirmarTurno() {
+    if (!sel.consultorio || !sel.tipo || !sel.fecha || !sel.horario || !patientId) return
+
+    setSubmitError('')
+    try {
+      if (demoMode) {
+        createAppointment({
+          patientId,
+          doctorId: Number(medicoId),
+          doctorName: medico?.nombre || `Médico ${medicoId}`,
+          clinicId: sel.consultorio.id,
+          clinicName: sel.consultorio.nombre,
+          type: sel.tipo.label,
+          dateIso: toIsoDate(sel.fecha),
+          time: sel.horario,
+        })
+      } else {
+        await turnosApi.crear({
+          id_medico: Number(medicoId),
+          id_clinica: Number(sel.consultorio.id),
+          fecha: toIsoDate(sel.fecha),
+          hora: `${sel.horario}:00`,
+          motivo_consulta: sel.tipo.label,
+        })
+      }
+
+      setStep(4)
+    } catch (err) {
+      setSubmitError(err?.message || 'No se pudo solicitar el turno.')
+    }
+  }
 
   // ── Enviado ──────────────────────────────────────────────────────────────
-  if (step === 5) {
+  if (step === 4) {
     return (
       <div className="wizard-page">
         <div className="receta-confirmacion surface-raised">
@@ -327,10 +435,14 @@ export default function WizardTurnoPage() {
           </Button>
         )}
         <div style={{ flex: 1 }} />
-        <Button disabled={!puedeAvanzar} onClick={step === 4 ? () => setStep(5) : avanzar}>
-          {step === 4 ? 'Confirmar turno' : 'Continuar'} <ChevronRight size={16} />
+        <Button disabled={!puedeAvanzar} onClick={step === 3 ? confirmarTurno : avanzar}>
+          {step === 3 ? 'Confirmar turno' : 'Continuar'} <ChevronRight size={16} />
         </Button>
       </div>
+
+      {submitError && (
+        <p style={{ marginTop: '0.85rem', color: 'var(--error)', fontSize: '0.86rem' }}>{submitError}</p>
+      )}
     </div>
   )
 }

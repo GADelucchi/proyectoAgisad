@@ -2,6 +2,7 @@ import { Outlet, Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import Navbar from '../components/layout/Navbar'
 import { formatDateDdMmYyyy } from '../utils/dateFormat'
+import { getUserDisplayName } from '../utils/userDisplay'
 import './PanelLayout.css'
 
 export default function AsistenteLayout() {
@@ -12,7 +13,7 @@ export default function AsistenteLayout() {
 
   return (
     <div className="panel-layout">
-      <Navbar titulo={`Panel Asistente — ${usuario.nombre}`} subtitulo={`Hoy, ${formatDateDdMmYyyy(new Date())}`} />
+      <Navbar titulo={`Panel Asistente — ${getUserDisplayName(usuario, 'Asistente')}`} subtitulo={`Hoy, ${formatDateDdMmYyyy(new Date())}`} />
       <main className="panel-main">
         <div className="container">
           <Outlet />

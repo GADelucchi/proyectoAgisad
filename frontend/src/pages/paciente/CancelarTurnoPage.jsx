@@ -1,21 +1,81 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ChevronLeft } from 'lucide-react'
 import Button from '../../components/ui/Button'
-import { formatTime24h } from '../../utils/dateFormat'
+import { useAuth } from '../../context/AuthContext'
+import { turnosApi } from '../../services/turnos.api'
+import { cancelAppointment, getPendingAppointmentsByPatient } from '../../mock/demoData'
+import { formatDateDdMmYyyy, formatTime24h } from '../../utils/dateFormat'
 import './CancelarTurnoPage.css'
-
-const TURNOS_MOCK = [
-  { id: 1, fecha: '28/05/2026', hora: '10:00', consultorio: 'Virtual',   tipo: 'Seguimiento' },
-  { id: 2, fecha: '02/06/2026', hora: '14:30', consultorio: 'Caraga',    tipo: 'Primera vez' },
-]
 
 export default function CancelarTurnoPage() {
   const { medicoId } = useParams()
   const navigate = useNavigate()
+  const { usuario, demoMode } = useAuth()
+  const patientId = usuario?.idUsuario || usuario?.id || null
+
+  const [turnos, setTurnos] = useState([])
   const [seleccionado, setSeleccionado] = useState(null)
   const [confirmado, setConfirmado] = useState(false)
   const [motivo, setMotivo] = useState('')
+  const [error, setError] = useState('')
+
+  // Carga y re-carga los turnos cuando cambia demoData
+  useEffect(() => {
+    let cancelled = false
+
+    async function cargar() {
+      try {
+        if (demoMode) {
+          const todos = getPendingAppointmentsByPatient(patientId)
+          if (!cancelled) {
+            setTurnos(todos.filter(t => String(t.doctorId) === String(medicoId)))
+          }
+          return
+        }
+
+        const rows = await turnosApi.listarMisTurnos({ idMedico: medicoId })
+        if (!cancelled) {
+          const activos = rows.filter(t => ['pendiente', 'confirmado', 'en_curso'].includes(t.status))
+          setTurnos(activos)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err?.message || 'No se pudieron cargar tus turnos.')
+          setTurnos([])
+        }
+      }
+    }
+
+    cargar()
+
+    if (demoMode) {
+      window.addEventListener('agisad-demo-data-changed', cargar)
+    }
+
+    return () => {
+      cancelled = true
+      if (demoMode) {
+        window.removeEventListener('agisad-demo-data-changed', cargar)
+      }
+    }
+  }, [patientId, medicoId, demoMode])
+
+  async function confirmarCancelacion() {
+    if (!seleccionado) return
+
+    setError('')
+    try {
+      if (demoMode) {
+        cancelAppointment(seleccionado.id)
+      } else {
+        await turnosApi.cancelarPropio(seleccionado.id, motivo)
+      }
+      setConfirmado(true)
+    } catch (err) {
+      setError(err?.message || 'No se pudo cancelar el turno.')
+    }
+  }
 
   if (confirmado) {
     return (
@@ -38,21 +98,23 @@ export default function CancelarTurnoPage() {
       <h1>Cancelar turno</h1>
       <p>Seleccioná el turno que querés cancelar. Recordá que los turnos no se pueden cancelar con menos de 72 horas de anticipación.</p>
 
-      {TURNOS_MOCK.length === 0 ? (
+      {error && <p style={{ color: 'var(--error)', fontSize: '0.86rem' }}>{error}</p>}
+
+      {turnos.length === 0 ? (
         <div className="surface-raised cancelar-empty">
-          <p>No tenés turnos activos para cancelar.</p>
+          <p>No tenés turnos activos para cancelar con este médico.</p>
         </div>
       ) : (
         <div className="cancelar-turnos">
-          {TURNOS_MOCK.map(t => (
+          {turnos.map(t => (
             <button
               key={t.id}
               className={`cancelar-turno-card surface-raised ${seleccionado?.id === t.id ? 'selected' : ''}`}
               onClick={() => setSeleccionado(t)}
             >
               <div>
-                <strong>{t.fecha} a las {formatTime24h(t.hora)}</strong>
-                <p>{t.tipo} · {t.consultorio}</p>
+                <strong>{formatDateDdMmYyyy(t.dateIso)} a las {formatTime24h(t.time)}</strong>
+                <p>{t.type} · {t.clinicName}</p>
               </div>
               {seleccionado?.id === t.id && <span className="badge badge-error">Seleccionado</span>}
             </button>
@@ -72,7 +134,7 @@ export default function CancelarTurnoPage() {
               onChange={e => setMotivo(e.target.value)}
             />
           </div>
-          <Button variant="danger" onClick={() => setConfirmado(true)}>
+          <Button variant="danger" onClick={confirmarCancelacion}>
             Confirmar cancelación
           </Button>
         </div>

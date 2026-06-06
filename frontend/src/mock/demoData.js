@@ -1,5 +1,6 @@
 const CLINICS_KEY = 'agisad-demo-clinics-by-doctor'
 const ASSISTANTS_KEY = 'agisad-demo-assistants-by-doctor'
+const APPOINTMENTS_KEY = 'agisad-demo-appointments'
 
 const DEFAULT_CLINICS = {
   1: [
@@ -75,14 +76,7 @@ const DOCTORS = [
     especialidad: 'Prof. de Psiquiatria',
     matricula: 'M.P. 18.395',
     plan: 'profesional',
-  },
-  {
-    id: 2,
-    nombre: 'Dra. Demo Medica',
-    especialidad: 'Medica Clinica',
-    matricula: 'M.P. 99.999',
-    plan: 'intermedio',
-  },
+  }
 ]
 
 const DEFAULT_ASSISTANTS = {
@@ -145,6 +139,22 @@ function parseStoredAssistants() {
   }
 }
 
+function parseStoredAppointments() {
+  const raw = localStorage.getItem(APPOINTMENTS_KEY)
+  if (!raw) {
+    localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify([]))
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify([]))
+    return []
+  }
+}
+
 function notifyDemoDataChanged() {
   window.dispatchEvent(new CustomEvent('agisad-demo-data-changed'))
 }
@@ -171,6 +181,24 @@ export function setAssistantsByDoctor(doctorId, assistants) {
   assistantsByDoctor[String(doctorId)] = assistants
   localStorage.setItem(ASSISTANTS_KEY, JSON.stringify(assistantsByDoctor))
   notifyDemoDataChanged()
+}
+
+export function createAssistantForDoctor(doctorId, assistantInput) {
+  const assistantsByDoctor = parseStoredAssistants()
+  const current = assistantsByDoctor[String(doctorId)] || []
+  const newAssistant = {
+    id: Date.now(),
+    nombre: assistantInput.nombre,
+    usuario: assistantInput.username || assistantInput.email.split('@')[0],
+    estado: assistantInput.permisos?.bloqueado ? 'bloqueada' : 'activa',
+    permisos: assistantInput.permisos || { agenda: true, pacientes: false },
+  }
+
+  assistantsByDoctor[String(doctorId)] = [...current, newAssistant]
+  localStorage.setItem(ASSISTANTS_KEY, JSON.stringify(assistantsByDoctor))
+  notifyDemoDataChanged()
+
+  return newAssistant
 }
 
 export function getAssistantAccess(username) {
@@ -231,4 +259,53 @@ export function summarizeClinicDays(clinic) {
     return `${from} a ${to}`
   }
   return 'Disponibilidad cargada'
+}
+
+export function getBookedSlotsByDoctorClinicDate({ doctorId, clinicId, dateIso }) {
+  const appointments = parseStoredAppointments()
+  return appointments
+    .filter(a =>
+      String(a.doctorId) === String(doctorId) &&
+      String(a.clinicId) === String(clinicId) &&
+      a.dateIso === dateIso &&
+      a.status !== 'cancelado'
+    )
+    .map(a => a.time)
+}
+
+export function createAppointment(appointmentInput) {
+  const appointments = parseStoredAppointments()
+  const newAppointment = {
+    id: Date.now(),
+    status: 'pendiente',
+    createdAt: new Date().toISOString(),
+    ...appointmentInput,
+  }
+
+  appointments.push(newAppointment)
+  localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(appointments))
+  notifyDemoDataChanged()
+  return newAppointment
+}
+
+export function getPendingAppointmentsByPatient(patientId) {
+  if (!patientId) return []
+
+  const appointments = parseStoredAppointments()
+  return appointments
+    .filter(a => String(a.patientId) === String(patientId) && a.status === 'pendiente')
+    .sort((a, b) => {
+      const aKey = `${a.dateIso} ${a.time}`
+      const bKey = `${b.dateIso} ${b.time}`
+      return aKey.localeCompare(bKey)
+    })
+}
+
+export function cancelAppointment(appointmentId) {
+  const appointments = parseStoredAppointments()
+  const updated = appointments.map(a =>
+    String(a.id) === String(appointmentId) ? { ...a, status: 'cancelado' } : a
+  )
+  localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(updated))
+  notifyDemoDataChanged()
 }

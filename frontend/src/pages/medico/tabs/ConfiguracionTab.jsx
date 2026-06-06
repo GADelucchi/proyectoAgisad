@@ -1,8 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Plus, Edit2, Trash2 } from 'lucide-react'
 import Button from '../../../components/ui/Button'
 import { useAuth } from '../../../context/AuthContext'
-import { getClinicsByDoctor, setClinicsByDoctor, getAssistantsByDoctor, setAssistantsByDoctor } from '../../../mock/demoData'
+import AltaAsistenteForm from '../../../components/forms/AltaAsistenteForm'
+import { authApi } from '../../../services/auth.api'
+import { medicosApi } from '../../../services/medicos.api'
+import { getClinicsByDoctor, setClinicsByDoctor, getAssistantsByDoctor, setAssistantsByDoctor, createAssistantForDoctor } from '../../../mock/demoData'
 import SmartDateInput from '../../../components/ui/SmartDateInput'
 import './ConfiguracionTab.css'
 
@@ -50,8 +53,8 @@ function resumenHorarios(rangos) {
 }
 
 export default function ConfiguracionTab() {
-  const { usuario } = useAuth()
-  const doctorId = String(usuario?.id || 0)
+  const { usuario, demoMode } = useAuth()
+  const doctorId = String(usuario?.idUsuario || usuario?.id || 0)
   const [consultorios, setConsultorios] = useState(() => getClinicsByDoctor(doctorId))
   const [asistentes, setAsistentes] = useState(() => getAssistantsByDoctor(doctorId))
   const [duracion, setDuracion]   = useState('30')
@@ -62,11 +65,38 @@ export default function ConfiguracionTab() {
   const [mostrarModal, setMostrarModal] = useState(false)
   const [editandoId, setEditandoId] = useState(null)
   const [consultorioDraft, setConsultorioDraft] = useState(crearConsultorioVacio())
-  const [terminos, setTerminos] = useState(() => {
-    const guardados = JSON.parse(localStorage.getItem(TERMINOS_KEY) || '{}')
-    return guardados[doctorId] || ''
-  })
+  const [terminos, setTerminos] = useState('')
   const [terminosEstado, setTerminosEstado] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadTerminos() {
+      if (demoMode) {
+        const guardados = JSON.parse(localStorage.getItem(TERMINOS_KEY) || '{}')
+        if (!cancelled) setTerminos(guardados[doctorId] || '')
+        return
+      }
+
+      try {
+        const tyc = await medicosApi.getMyTyc()
+        if (!cancelled) {
+          setTerminos(tyc?.texto || '')
+        }
+      } catch {
+        if (!cancelled) {
+          setTerminos('')
+          setTerminosEstado('No se pudieron cargar los términos desde la DB.')
+        }
+      }
+    }
+
+    loadTerminos()
+
+    return () => {
+      cancelled = true
+    }
+  }, [demoMode, doctorId])
 
   function toggleAsistente(id) {
     setAsistentes(prev => {
@@ -95,6 +125,32 @@ export default function ConfiguracionTab() {
       setAssistantsByDoctor(doctorId, updated)
       return updated
     })
+  }
+
+  async function crearAsistente(payload) {
+    if (demoMode) {
+      const nuevo = createAssistantForDoctor(doctorId, payload)
+      setAsistentes((prev) => [...prev, nuevo])
+      return nuevo
+    }
+
+    const response = await authApi.registerAsistente({
+      ...payload,
+      clinic_ids: payload.clinic_ids,
+    })
+
+    setAsistentes((prev) => [
+      ...prev,
+      {
+        id: response?.id_asistente || Date.now(),
+        nombre: payload.nombre,
+        usuario: response?.username || payload.username || payload.email.split('@')[0],
+        estado: payload.permisos?.bloqueado ? 'bloqueada' : 'activa',
+        permisos: payload.permisos,
+      },
+    ])
+
+    return response
   }
 
   function abrirNuevoConsultorio() {
@@ -198,12 +254,27 @@ export default function ConfiguracionTab() {
     })
   }
 
-  function guardarTerminos() {
-    const guardados = JSON.parse(localStorage.getItem(TERMINOS_KEY) || '{}')
-    guardados[doctorId] = terminos.trim()
-    localStorage.setItem(TERMINOS_KEY, JSON.stringify(guardados))
-    setTerminosEstado('Términos guardados correctamente.')
-    setTimeout(() => setTerminosEstado(''), 2000)
+  async function guardarTerminos() {
+    const texto = terminos.trim()
+    if (!texto) {
+      setTerminosEstado('Ingresá un texto de términos antes de guardar.')
+      return
+    }
+
+    try {
+      if (demoMode) {
+        const guardados = JSON.parse(localStorage.getItem(TERMINOS_KEY) || '{}')
+        guardados[doctorId] = texto
+        localStorage.setItem(TERMINOS_KEY, JSON.stringify(guardados))
+      } else {
+        await medicosApi.saveMyTyc(texto)
+      }
+
+      setTerminosEstado('Términos guardados correctamente.')
+      setTimeout(() => setTerminosEstado(''), 2000)
+    } catch (err) {
+      setTerminosEstado(err?.message || 'No se pudieron guardar los términos.')
+    }
   }
 
   function restaurarPredeterminados() {
@@ -353,6 +424,16 @@ export default function ConfiguracionTab() {
             </Button>
           </div>
         ))}
+
+        <AltaAsistenteForm
+          title="Alta de asistente"
+          subtitle="Le damos acceso al sistema y lo vinculamos a este profesional."
+          clinicOptions={consultorios.map((consultorio) => ({
+            id: consultorio.id,
+            label: consultorio.nombre,
+          }))}
+          onCreate={crearAsistente}
+        />
       </section>
 
       {/* Cambiar contraseña */}

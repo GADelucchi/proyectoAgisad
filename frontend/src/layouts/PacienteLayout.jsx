@@ -1,6 +1,7 @@
 import { Outlet, Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import Navbar from '../components/layout/Navbar'
+import { getUserDisplayName } from '../utils/userDisplay'
 import './PanelLayout.css'
 
 export default function PacienteLayout() {
@@ -11,7 +12,7 @@ export default function PacienteLayout() {
 
   return (
     <div className="panel-layout">
-      <Navbar titulo={`Hola, ${usuario.nombre}`} subtitulo="Panel paciente" />
+      <Navbar titulo={`Hola, ${getUserDisplayName(usuario, 'Paciente')}`} subtitulo="Panel paciente" />
       <main className="panel-main">
         <div className="container">
           <Outlet />

@@ -11,6 +11,60 @@
   margin-bottom: 1.75rem;
 }
 
+.buscador-pendientes {
+  padding: 1rem 1.1rem;
+  margin-bottom: 1rem;
+}
+
+.buscador-pendientes-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.65rem;
+}
+
+.buscador-pendientes-head h2 {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.buscador-pendientes-head span {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--primary);
+  background: var(--primary-light);
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+}
+
+.buscador-pendientes-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.buscador-pendiente-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.7rem;
+  background: var(--surface);
+}
+
+.buscador-pendiente-item p {
+  margin: 0.2rem 0 0;
+  font-size: 0.84rem;
+  color: var(--text-muted);
+}
+
+.buscador-pendiente-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--warning);
+}
+
 .buscador-search-icon { color: var(--text-muted); flex-shrink: 0; }
 
 .buscador-input {

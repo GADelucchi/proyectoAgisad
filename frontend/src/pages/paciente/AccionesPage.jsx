@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Calendar, XCircle, FileText, MessageSquare, ChevronLeft } from 'lucide-react'
 import { getDemoDoctorById } from '../../mock/demoData'
+import { pacientesApi } from '../../services/pacientes.api'
+import { useAuth } from '../../context/AuthContext'
 import './AccionesPage.css'
 
 const ACCIONES_POR_PLAN = {
@@ -20,23 +22,103 @@ const ACCIONES_CONFIG = {
 
 const ACCIONES_CON_TERMINOS = ['receta', 'turno']
 const TERMINOS_KEY = 'agisad-terms-by-doctor'
+const TERMINOS_ACEPTED_KEY = 'agisad-tyc-acepted'
 const TERMINOS_PREDETERMINADOS = 'Estos términos y condiciones regulan la atención a través de Agisad. La solicitud de turnos, recetas y mensajes no reemplaza una consulta médica de urgencia. Los datos personales serán tratados de forma confidencial según normativa vigente.'
+
+// Hash determinístico del texto de los términos para detectar cambios
+function hashText(text) {
+  let h = 0
+  for (let i = 0; i < text.length; i++) {
+    h = (Math.imul(31, h) + text.charCodeAt(i)) | 0
+  }
+  return String(h)
+}
+
+function getAceptedHash(patientId, medicoId) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(TERMINOS_ACEPTED_KEY) || '{}')
+    return stored?.[String(patientId)]?.[String(medicoId)] ?? null
+  } catch {
+    return null
+  }
+}
+
+function saveAceptedHash(patientId, medicoId, hash) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(TERMINOS_ACEPTED_KEY) || '{}')
+    if (!stored[String(patientId)]) stored[String(patientId)] = {}
+    stored[String(patientId)][String(medicoId)] = hash
+    localStorage.setItem(TERMINOS_ACEPTED_KEY, JSON.stringify(stored))
+  } catch {
+    // localStorage no disponible: ignorar
+  }
+}
 
 export default function AccionesPage() {
   const { medicoId } = useParams()
   const navigate = useNavigate()
-  const medico = getDemoDoctorById(medicoId)
+  const { usuario, demoMode } = useAuth()
+  const patientId = usuario?.idUsuario || usuario?.id || null
+  const medicoDemo = getDemoDoctorById(medicoId)
+  const medico = useMemo(() => {
+    if (medicoDemo) return medicoDemo
+    return {
+      id: Number(medicoId),
+      nombre: `Médico ${medicoId}`,
+      especialidad: 'Especialidad',
+      matricula: '-',
+      plan: 'profesional',
+    }
+  }, [medicoDemo, medicoId])
   const [showAceptacion, setShowAceptacion] = useState(false)
   const [showTerminos, setShowTerminos] = useState(false)
   const [aceptaTerminos, setAceptaTerminos] = useState(false)
   const [accionPendiente, setAccionPendiente] = useState(null)
-
-  if (!medico) return <p style={{ padding: '2rem', color: 'var(--error)' }}>Médico no encontrado.</p>
+  const [tycApi, setTycApi] = useState(null)
 
   const accionesDisponibles = ACCIONES_POR_PLAN[medico.plan] || []
 
   const terminosPorMedico = JSON.parse(localStorage.getItem(TERMINOS_KEY) || '{}')
   const terminosActuales = terminosPorMedico[medicoId] || TERMINOS_PREDETERMINADOS
+  const terminosHash = hashText(terminosActuales)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadTyc() {
+      if (demoMode) {
+        setTycApi(null)
+        return
+      }
+
+      try {
+        const response = await pacientesApi.getTycMedico(medicoId)
+        if (!cancelled) {
+          setTycApi(response)
+        }
+      } catch {
+        if (!cancelled) {
+          setTycApi(null)
+        }
+      }
+    }
+
+    loadTyc()
+
+    return () => {
+      cancelled = true
+    }
+  }, [demoMode, medicoId])
+
+  function yAceptoTerminos() {
+    if (!demoMode) {
+      if (!tycApi || !tycApi.requiere_aceptacion) return true
+      return Boolean(tycApi.aceptado)
+    }
+
+    if (!patientId) return false
+    return getAceptedHash(patientId, medicoId) === terminosHash
+  }
 
   function navegarAccion(key) {
     const a = ACCIONES_CONFIG[key]
@@ -44,7 +126,7 @@ export default function AccionesPage() {
   }
 
   function handleClickAccion(key) {
-    if (ACCIONES_CON_TERMINOS.includes(key)) {
+    if (ACCIONES_CON_TERMINOS.includes(key) && !yAceptoTerminos()) {
       setAccionPendiente(key)
       setAceptaTerminos(false)
       setShowAceptacion(true)
@@ -53,11 +135,23 @@ export default function AccionesPage() {
     navegarAccion(key)
   }
 
-  function confirmarAceptacion() {
+  async function confirmarAceptacion() {
     if (!accionPendiente || !aceptaTerminos) return
+
+    if (demoMode) {
+      saveAceptedHash(patientId, medicoId, terminosHash)
+    } else if (tycApi?.tyc?.id_tyc) {
+      await pacientesApi.aceptarTycMedico(medicoId, tycApi.tyc.id_tyc)
+      setTycApi(prev => (prev ? { ...prev, aceptado: true } : prev))
+    }
+
     setShowAceptacion(false)
     navegarAccion(accionPendiente)
   }
+
+  const textoTerminosModal = demoMode
+    ? terminosActuales
+    : tycApi?.tyc?.texto || TERMINOS_PREDETERMINADOS
 
   return (
     <div className="acciones-page">
@@ -117,7 +211,7 @@ export default function AccionesPage() {
         <div className="acciones-modal-backdrop" role="dialog" aria-modal="true">
           <div className="acciones-modal acciones-modal-terms surface-raised">
             <h3>Términos y condiciones</h3>
-            <p className="acciones-terms-text">{terminosActuales}</p>
+            <p className="acciones-terms-text">{textoTerminosModal}</p>
             <div className="acciones-modal-actions">
               <button type="button" className="acciones-modal-btn acciones-modal-btn-primary" onClick={() => setShowTerminos(false)}>
                 Cerrar

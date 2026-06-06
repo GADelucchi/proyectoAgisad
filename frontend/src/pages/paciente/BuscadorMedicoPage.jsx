@@ -2,12 +2,19 @@ import { useState } from 'react'
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, MapPin, Stethoscope } from 'lucide-react'
-import { getDemoDoctors } from '../../mock/demoData'
+import { useAuth } from '../../context/AuthContext'
+import { getDemoDoctors, getPendingAppointmentsByPatient } from '../../mock/demoData'
+import { medicosApi } from '../../services/medicos.api'
+import { turnosApi } from '../../services/turnos.api'
+import { formatDateDdMmYyyy, formatTime24h } from '../../utils/dateFormat'
 import './BuscadorMedicoPage.css'
 
 export default function BuscadorMedicoPage() {
+  const { usuario, demoMode } = useAuth()
   const [query, setQuery] = useState('')
   const [tick, setTick] = useState(0)
+  const [medicosApiRows, setMedicosApiRows] = useState([])
+  const [turnosApiRows, setTurnosApiRows] = useState([])
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -16,7 +23,39 @@ export default function BuscadorMedicoPage() {
     return () => window.removeEventListener('agisad-demo-data-changed', refresh)
   }, [])
 
-  const medicos = getDemoDoctors(tick)
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadRealData() {
+      if (demoMode) return
+
+      try {
+        const [medicosRows, turnosRows] = await Promise.all([
+          medicosApi.list(query),
+          turnosApi.listarMisTurnos(),
+        ])
+
+        if (!cancelled) {
+          setMedicosApiRows(medicosRows)
+          setTurnosApiRows(turnosRows.filter(t => t.status === 'pendiente'))
+        }
+      } catch {
+        if (!cancelled) {
+          setMedicosApiRows([])
+          setTurnosApiRows([])
+        }
+      }
+    }
+
+    loadRealData()
+    return () => {
+      cancelled = true
+    }
+  }, [demoMode, query])
+
+  const medicos = demoMode ? getDemoDoctors(tick) : medicosApiRows
+  const patientId = usuario?.idUsuario || usuario?.id || null
+  const turnosPendientes = demoMode ? getPendingAppointmentsByPatient(patientId) : turnosApiRows
 
   const resultados = medicos.filter(m =>
     m.nombre.toLowerCase().includes(query.toLowerCase()) ||
@@ -29,6 +68,26 @@ export default function BuscadorMedicoPage() {
         <h1>Buscá tu médico</h1>
         <p>Encontrá al profesional y realizá tu gestión: turno, receta o consulta.</p>
       </div>
+
+      {turnosPendientes.length > 0 && (
+        <section className="buscador-pendientes surface-raised">
+          <div className="buscador-pendientes-head">
+            <h2>Tus turnos pendientes</h2>
+            <span>{turnosPendientes.length}</span>
+          </div>
+          <div className="buscador-pendientes-list">
+            {turnosPendientes.map(turno => (
+              <article key={turno.id} className="buscador-pendiente-item">
+                <div>
+                  <strong>{formatDateDdMmYyyy(turno.dateIso)} · {formatTime24h(turno.time)}</strong>
+                  <p>{turno.doctorName} · {turno.clinicName}</p>
+                </div>
+                <span className="buscador-pendiente-badge">Pendiente</span>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="buscador-search surface-raised">
         <Search size={18} className="buscador-search-icon" />

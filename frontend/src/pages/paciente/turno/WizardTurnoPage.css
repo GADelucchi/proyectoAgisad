@@ -1,4 +1,9 @@
-.wizard-page { padding: 2rem 0; max-width: 800px; }
+.wizard-page {
+  padding: 2rem 0;
+  width: min(1180px, calc(100vw - 3rem));
+  max-width: 1180px;
+  margin: 0 auto;
+}
 
 /* Steps bar */
 .wizard-steps {
@@ -69,6 +74,7 @@
   padding: 2rem;
   margin-bottom: 1.5rem;
   min-height: 300px;
+  width: 100%;
 }
 
 .wizard-step-title {
@@ -151,6 +157,34 @@
 
 /* Calendario */
 .wizard-calendario { padding: 1.25rem; margin-top: 1.25rem; }
+.wizard-fecha-horario-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 1.1fr) minmax(320px, 0.9fr);
+  gap: 1rem;
+  margin-top: 1rem;
+  align-items: start;
+}
+
+.wizard-fecha-horario-grid .wizard-calendario {
+  margin-top: 0;
+}
+
+.wizard-horarios-panel {
+  padding: 1rem;
+  min-height: 100%;
+}
+
+.wizard-horarios-panel h3 {
+  margin-bottom: 0.4rem;
+  font-size: 1rem;
+}
+
+.wizard-horarios-fecha {
+  font-size: 0.86rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
 .wizard-cal-header { text-align: center; font-weight: 700; font-size: 1rem; margin-bottom: 1rem; }
 .wizard-cal-grid {
   display: grid;
@@ -186,6 +220,12 @@
 .wizard-cal-dia.hoy { background: var(--success-light); color: var(--success); border-color: var(--success); }
 .wizard-cal-dia.seleccionado { background: var(--primary); color: #fff; border-color: var(--primary); }
 .wizard-cal-dia.no-disponible { opacity: 0.3; cursor: not-allowed; }
+.wizard-cal-dia.completo {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  opacity: 1;
+}
 
 /* Horarios */
 .wizard-horarios {
@@ -207,6 +247,22 @@
 }
 .wizard-horario-btn:hover { background: var(--primary-light); border-color: var(--primary); }
 .wizard-horario-btn.selected { background: var(--primary); color: #fff; border-color: var(--primary); }
+.wizard-horario-btn.ocupado {
+  background: var(--surface-elevated);
+  border-color: var(--border);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+@media (max-width: 900px) {
+  .wizard-fecha-horario-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .wizard-page {
+    width: min(100vw - 1.5rem, 100%);
+  }
+}
 
 /* Resumen */
 .wizard-resumen {

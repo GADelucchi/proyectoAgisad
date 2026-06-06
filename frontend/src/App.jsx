@@ -38,6 +38,7 @@ export default function App() {
               <Route path="/login"           element={<LoginPage />} />
               <Route path="/registro"        element={<RegistroPage />} />
               <Route path="/registro/paciente" element={<RegistroPacientePage />} />
+              <Route path="/registro/profesional" element={<RegistroMedicoPage />} />
               <Route path="/registro/medico" element={<RegistroMedicoPage />} />
               <Route path="/registro/gerente" element={<RegistroGerentePage />} />
               <Route path="/verificar-email" element={<VerificarEmailPage />} />

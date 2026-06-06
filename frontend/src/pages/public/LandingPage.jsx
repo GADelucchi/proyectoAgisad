@@ -10,7 +10,7 @@ const FEATURES = [
   },
   {
     icon: "💬",
-    title: "Recordatorios autotmáticos",
+    title: "Recordatorios automáticos",
     desc: "Mensajes automáticos 24 y 2 horas antes del turno. Confirmación con un clic. Reducí el ausentismo hasta un 60%.",
     tag: "Integración oficial →",
   },

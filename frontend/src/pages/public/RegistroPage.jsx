@@ -12,20 +12,12 @@ const CARDS = [
     cta: 'Crear cuenta de paciente',
   },
   {
-    role: 'medico',
-    title: 'Médico',
-    description: 'Registrate con tu matrícula y elegí tu membresía profesional.',
-    bullets: ['Matrícula y especialidad', 'Perfil profesional', 'Plan de membresía'],
-    to: '/registro/medico',
-    cta: 'Crear cuenta de médico',
-  },
-  {
-    role: 'gerente',
-    title: 'Gerente',
-    description: 'Abrí tu cuenta para administrar una o más clínicas.',
-    bullets: ['Datos del responsable', 'Alta de clínica', 'Plan de gestión'],
-    to: '/registro/gerente',
-    cta: 'Crear cuenta de gerente',
+    role: 'profesional',
+    title: 'Profesional',
+    description: 'Elegí plan: Starter/Medium/Professional crea perfil médico y Empresarial crea perfil gerente.',
+    bullets: ['Datos personales', 'Especialidad o clínica', 'Membresía y rol automático'],
+    to: '/registro/profesional',
+    cta: 'Crear cuenta profesional',
   },
 ]
 
