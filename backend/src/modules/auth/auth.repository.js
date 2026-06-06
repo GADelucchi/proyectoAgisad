@@ -2,9 +2,27 @@ const { query } = require('../../db/query')
 
 async function findUserByEmail(email) {
   const rows = await query(
-    `SELECT u.id_usuario, u.id_rol, u.username, u.email, u.password_hash, u.activo, r.nombre AS rol
+    `SELECT
+       u.id_usuario,
+       u.id_rol,
+       u.username,
+       u.email,
+       u.password_hash,
+       u.activo,
+       r.nombre AS rol,
+       COALESCE(
+         CONCAT(p.nombre, ' ', p.apellido),
+         CONCAT(m.nombre, ' ', m.apellido),
+         CONCAT(g.nombre, ' ', g.apellido),
+         CONCAT(a.nombre, ' ', a.apellido),
+         u.username
+       ) AS nombre
      FROM usuarios u
      INNER JOIN roles r ON r.id_rol = u.id_rol
+     LEFT JOIN pacientes p ON p.id_usuario = u.id_usuario
+     LEFT JOIN medicos m ON m.id_usuario = u.id_usuario
+     LEFT JOIN gerentes g ON g.id_usuario = u.id_usuario
+     LEFT JOIN asistentes a ON a.id_usuario = u.id_usuario
      WHERE u.email = :email
      LIMIT 1`,
     { email }

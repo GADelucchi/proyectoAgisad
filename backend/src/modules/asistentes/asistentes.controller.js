@@ -1,4 +1,4 @@
-const { listAsistentes, getAsistente, patchPermisos } = require('./asistentes.service')
+const { listAsistentes, getAsistente, patchPermisos, createAsistente } = require('./asistentes.service')
 
 async function list(req, res, next) {
   try {
@@ -42,4 +42,13 @@ async function updatePermisos(req, res, next) {
   }
 }
 
-module.exports = { list, getOne, updatePermisos }
+async function create(req, res, next) {
+  try {
+    const data = await createAsistente(req.body, req.user)
+    res.status(201).json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+module.exports = { list, getOne, updatePermisos, create }

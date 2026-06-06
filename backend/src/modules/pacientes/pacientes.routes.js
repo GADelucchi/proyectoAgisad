@@ -20,6 +20,20 @@ router.post(
   ctrl.requestReceta
 )
 
+router.get(
+  '/medicos/:id_medico/tyc',
+  requireAuth,
+  requireRoles('paciente'),
+  ctrl.getTyc
+)
+
+router.post(
+  '/medicos/:id_medico/tyc/aceptar',
+  requireAuth,
+  requireRoles('paciente'),
+  ctrl.acceptTyc
+)
+
 // GET /api/pacientes/:id
 router.get(
   '/:id',

@@ -18,6 +18,8 @@ function getDayOfWeek(dateIso) {
   return jsDay
 }
 
+const INDEX_TO_DAY = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab']
+
 async function listMedicos(filters) {
   return medicosRepo.listMedicos(filters)
 }
@@ -68,7 +70,87 @@ async function getDisponibilidad({ idMedico, idClinica, fecha }) {
   }
 }
 
+async function getMyTyc({ requesterIdUsuario, requesterRol }) {
+  if (requesterRol !== 'medico') {
+    throw new HttpError(403, 'Solo médicos pueden consultar sus TyC')
+  }
+
+  const idMedico = await medicosRepo.findMedicoIdByUserId(requesterIdUsuario)
+  if (!idMedico) {
+    throw new HttpError(404, 'Médico no encontrado')
+  }
+
+  const tyc = await medicosRepo.findActiveTycByMedico(idMedico)
+  return tyc || null
+}
+
+async function saveMyTyc({ texto, requesterIdUsuario, requesterRol }) {
+  if (requesterRol !== 'medico') {
+    throw new HttpError(403, 'Solo médicos pueden guardar TyC')
+  }
+
+  const cleanText = String(texto || '').trim()
+  if (!cleanText) {
+    throw new HttpError(400, 'El texto de términos es obligatorio')
+  }
+
+  const idMedico = await medicosRepo.findMedicoIdByUserId(requesterIdUsuario)
+  if (!idMedico) {
+    throw new HttpError(404, 'Médico no encontrado')
+  }
+
+  const current = await medicosRepo.findActiveTycByMedico(idMedico)
+  if (current && String(current.texto || '').trim() === cleanText) {
+    return current
+  }
+
+  const nextVersion = current ? Number(current.version) + 1 : 1
+
+  await medicosRepo.deactivateTycByMedico(idMedico)
+  return medicosRepo.insertMedicoTyc({
+    idMedico,
+    version: nextVersion,
+    texto: cleanText,
+  })
+}
+
+async function listClinicasByMedico({ idMedico }) {
+  if (!idMedico) {
+    throw new HttpError(400, 'id_medico es obligatorio')
+  }
+
+  const { clinics, disponibilidad } = await medicosRepo.listClinicasByMedico(Number(idMedico))
+
+  return clinics.map((clinic) => {
+    const rangos = disponibilidad
+      .filter((d) => Number(d.id_clinica) === Number(clinic.id_clinica))
+      .map((d, idx) => ({
+        id: Number(`${clinic.id_clinica}${idx + 1}`),
+        frecuencia: 'semanal',
+        dia: INDEX_TO_DAY[Number(d.dia_semana)] || 'Lun',
+        fecha: '',
+        desde: '',
+        hasta: '',
+        dias: [INDEX_TO_DAY[Number(d.dia_semana)] || 'Lun'],
+        inicio: d.hora_inicio,
+        fin: d.hora_fin,
+      }))
+
+    return {
+      id: clinic.id_clinica,
+      nombre: clinic.nombre,
+      tipo: String(clinic.nombre || '').toLowerCase().includes('virtual') ? 'virtual' : 'presencial',
+      ciudad: clinic.ciudad || '',
+      direccion: clinic.direccion || '',
+      rangos,
+    }
+  })
+}
+
 module.exports = {
   listMedicos,
   getDisponibilidad,
+  getMyTyc,
+  saveMyTyc,
+  listClinicasByMedico,
 }

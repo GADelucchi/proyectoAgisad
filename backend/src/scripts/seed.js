@@ -49,10 +49,11 @@ async function seed() {
       `SELECT id_clinica FROM clinicas WHERE nombre = 'Clínica Demo Agisad' LIMIT 1`
     )
 
-    // ── Especialidad (ya existe por INSERT IGNORE en el schema) ──────
-    const [[{ id_especialidad }]] = await conn.execute(
-      `SELECT id_especialidad FROM especialidades WHERE nombre = 'Clínica Médica' LIMIT 1`
-    )
+    // ── Detección de columnas de medicos (schema viejo vs nuevo) ─────
+    const [medicosColumns] = await conn.execute(`SHOW COLUMNS FROM medicos`)
+    const medicoFields = new Set(medicosColumns.map((c) => c.Field))
+    const hasIdEspecialidad = medicoFields.has('id_especialidad')
+    const hasMatricula = medicoFields.has('matricula')
 
     // ── Roles ────────────────────────────────────────────────────────
     const [[{ id_rol: id_rol_admin }]] = await conn.execute(
@@ -82,12 +83,25 @@ async function seed() {
     const [[{ id_usuario: id_usuario_medico }]] = await conn.execute(
       `SELECT id_usuario FROM usuarios WHERE email = 'medico@demo.com' LIMIT 1`
     )
-    await conn.execute(
-      `INSERT IGNORE INTO medicos
-         (id_usuario, id_especialidad, id_ciudad, matricula, nombre, apellido)
-       VALUES (?, ?, ?, 'MP-12345', 'Carlos', 'García')`,
-      [id_usuario_medico, id_especialidad, id_ciudad]
-    )
+    if (hasIdEspecialidad && hasMatricula) {
+      const [[{ id_especialidad }]] = await conn.execute(
+        `SELECT id_especialidad FROM especialidades WHERE nombre = 'Clínica Médica' LIMIT 1`
+      )
+
+      await conn.execute(
+        `INSERT IGNORE INTO medicos
+           (id_usuario, id_especialidad, id_ciudad, matricula, nombre, apellido)
+         VALUES (?, ?, ?, 'MP-12345', 'Carlos', 'García')`,
+        [id_usuario_medico, id_especialidad, id_ciudad]
+      )
+    } else {
+      await conn.execute(
+        `INSERT IGNORE INTO medicos
+           (id_usuario, nombre, apellido, dni, id_ciudad, matricula_prov)
+         VALUES (?, 'Carlos', 'García', '20111222', ?, 'MP-12345')`,
+        [id_usuario_medico, id_ciudad]
+      )
+    }
     const [[{ id_medico }]] = await conn.execute(
       `SELECT id_medico FROM medicos WHERE id_usuario = ? LIMIT 1`,
       [id_usuario_medico]

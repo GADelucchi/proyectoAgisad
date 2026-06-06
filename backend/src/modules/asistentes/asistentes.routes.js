@@ -4,6 +4,13 @@ const ctrl = require('./asistentes.controller')
 
 const router = Router()
 
+router.post(
+  '/',
+  requireAuth,
+  requireRoles('medico', 'gerente', 'admin'),
+  ctrl.create
+)
+
 // GET /api/asistentes?id_medico=X
 router.get(
   '/',

@@ -89,6 +89,37 @@ async function findMedicoIdByUserId(idUsuario) {
   return rows[0]?.id_medico || null
 }
 
+async function findGerenteIdByUserId(idUsuario) {
+  const rows = await query(
+    `SELECT id_gerente
+     FROM gerentes
+     WHERE id_usuario = :idUsuario
+     LIMIT 1`,
+    { idUsuario }
+  )
+  return rows[0]?.id_gerente || null
+}
+
+async function findClinicasByMedicoId(idMedico) {
+  return query(
+    `SELECT mc.id_clinica
+     FROM medico_clinicas mc
+     WHERE mc.id_medico = :idMedico
+       AND mc.activo = 1`,
+    { idMedico }
+  )
+}
+
+async function findClinicasByGerenteId(idGerente) {
+  return query(
+    `SELECT gc.id_clinica
+     FROM gerente_clinicas gc
+     WHERE gc.id_gerente = :idGerente
+       AND gc.activo = 1`,
+    { idGerente }
+  )
+}
+
 async function findAsistenteIdByUserId(idUsuario) {
   const rows = await query(
     `SELECT id_asistente
@@ -114,11 +145,24 @@ async function hasAsistenteAccessToMedico({ idUsuario, idMedico }) {
   return Boolean(rows[0])
 }
 
+async function insertAsistenteClinica(idAsistente, idClinica) {
+  await query(
+    `INSERT INTO asistente_clinicas (id_asistente, id_clinica)
+     VALUES (:idAsistente, :idClinica)
+     ON DUPLICATE KEY UPDATE activo = 1`,
+    { idAsistente, idClinica }
+  )
+}
+
 module.exports = {
   listAsistentesByMedico,
   findAsistenteById,
   upsertPermisos,
   findMedicoIdByUserId,
+  findGerenteIdByUserId,
+  findClinicasByMedicoId,
+  findClinicasByGerenteId,
+  insertAsistenteClinica,
   findAsistenteIdByUserId,
   hasAsistenteAccessToMedico,
 }

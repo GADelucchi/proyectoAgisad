@@ -1,4 +1,11 @@
-const { listPacientes, getPaciente, patchPaciente, solicitarReceta } = require('./pacientes.service')
+const {
+  listPacientes,
+  getPaciente,
+  patchPaciente,
+  solicitarReceta,
+  getTycByMedico,
+  aceptarTycByMedico,
+} = require('./pacientes.service')
 
 async function list(req, res, next) {
   try {
@@ -57,4 +64,32 @@ async function requestReceta(req, res, next) {
   }
 }
 
-module.exports = { list, getOne, patch, requestReceta }
+async function getTyc(req, res, next) {
+  try {
+    const data = await getTycByMedico({
+      idMedico: req.params.id_medico,
+      requesterIdUsuario: req.user.idUsuario,
+      requesterRol: req.user.rol,
+    })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function acceptTyc(req, res, next) {
+  try {
+    const data = await aceptarTycByMedico({
+      idMedico: req.params.id_medico,
+      idTyc: req.body?.id_tyc,
+      requesterIdUsuario: req.user.idUsuario,
+      requesterRol: req.user.rol,
+      ip: req.ip,
+    })
+    res.status(201).json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+module.exports = { list, getOne, patch, requestReceta, getTyc, acceptTyc }

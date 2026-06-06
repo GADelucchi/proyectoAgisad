@@ -8,6 +8,9 @@ const {
   updatePaciente,
   findMedicoIdByUserId,
   hasAsistenteAccessToMedico,
+  findActiveTycByMedico,
+  hasPacienteAcceptedTyc,
+  insertPacienteTycAceptacion,
 } = require('./pacientes.repository')
 const { sendRecetaSolicitudEmail } = require('../../utils/mailer')
 
@@ -132,9 +135,85 @@ async function solicitarReceta({ idMedico, tipo, items, requesterIdUsuario, requ
   }
 }
 
+async function getTycByMedico({ idMedico, requesterIdUsuario, requesterRol }) {
+  if (requesterRol !== 'paciente') {
+    throw new HttpError(403, 'Solo pacientes pueden consultar TyC de médicos')
+  }
+
+  const targetMedico = Number(idMedico)
+  if (!targetMedico) {
+    throw new HttpError(400, 'id_medico invalido')
+  }
+
+  const paciente = await findPacienteByUserId(requesterIdUsuario)
+  if (!paciente) {
+    throw new HttpError(404, 'Paciente no encontrado')
+  }
+
+  const tyc = await findActiveTycByMedico(targetMedico)
+  if (!tyc) {
+    return {
+      requiere_aceptacion: false,
+      tyc: null,
+      aceptado: true,
+    }
+  }
+
+  const aceptado = await hasPacienteAcceptedTyc({
+    idPaciente: paciente.id_paciente,
+    idTyc: tyc.id_tyc,
+  })
+
+  return {
+    requiere_aceptacion: true,
+    tyc,
+    aceptado,
+  }
+}
+
+async function aceptarTycByMedico({ idMedico, idTyc, requesterIdUsuario, requesterRol, ip }) {
+  if (requesterRol !== 'paciente') {
+    throw new HttpError(403, 'Solo pacientes pueden aceptar TyC')
+  }
+
+  const targetMedico = Number(idMedico)
+  if (!targetMedico) {
+    throw new HttpError(400, 'id_medico invalido')
+  }
+
+  const paciente = await findPacienteByUserId(requesterIdUsuario)
+  if (!paciente) {
+    throw new HttpError(404, 'Paciente no encontrado')
+  }
+
+  const tyc = await findActiveTycByMedico(targetMedico)
+  if (!tyc) {
+    throw new HttpError(404, 'El médico no tiene TyC activos')
+  }
+
+  if (idTyc && Number(idTyc) !== Number(tyc.id_tyc)) {
+    throw new HttpError(400, 'El id_tyc no coincide con la versión activa')
+  }
+
+  await insertPacienteTycAceptacion({
+    idPaciente: paciente.id_paciente,
+    idMedico: targetMedico,
+    idTyc: tyc.id_tyc,
+    ip,
+  })
+
+  return {
+    ok: true,
+    id_tyc: tyc.id_tyc,
+    aceptado: true,
+  }
+}
+
 module.exports = {
   listPacientes,
   getPaciente,
   patchPaciente,
   solicitarReceta,
+  getTycByMedico,
+  aceptarTycByMedico,
 }

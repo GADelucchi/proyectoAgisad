@@ -155,6 +155,40 @@ async function hasAsistenteAccessToMedico({ idUsuario, idMedico }) {
   return Boolean(rows[0])
 }
 
+async function findActiveTycByMedico(idMedico) {
+  const rows = await query(
+    `SELECT id_tyc, id_medico, version, texto, activo, creado_en
+     FROM medico_tyc
+     WHERE id_medico = :idMedico
+       AND activo = 1
+     ORDER BY version DESC
+     LIMIT 1`,
+    { idMedico }
+  )
+  return rows[0] || null
+}
+
+async function hasPacienteAcceptedTyc({ idPaciente, idTyc }) {
+  const rows = await query(
+    `SELECT 1 AS ok
+     FROM paciente_tyc_aceptaciones
+     WHERE id_paciente = :idPaciente
+       AND id_tyc = :idTyc
+     LIMIT 1`,
+    { idPaciente, idTyc }
+  )
+  return Boolean(rows[0])
+}
+
+async function insertPacienteTycAceptacion({ idPaciente, idMedico, idTyc, ip }) {
+  await query(
+    `INSERT INTO paciente_tyc_aceptaciones (id_paciente, id_medico, id_tyc, ip)
+     VALUES (:idPaciente, :idMedico, :idTyc, :ip)
+     ON DUPLICATE KEY UPDATE aceptado_en = CURRENT_TIMESTAMP, ip = VALUES(ip)`,
+    { idPaciente, idMedico, idTyc, ip: ip || null }
+  )
+}
+
 module.exports = {
   listPacientesByMedico,
   findPacienteById,
@@ -164,4 +198,7 @@ module.exports = {
   updatePaciente,
   findMedicoIdByUserId,
   hasAsistenteAccessToMedico,
+  findActiveTycByMedico,
+  hasPacienteAcceptedTyc,
+  insertPacienteTycAceptacion,
 }

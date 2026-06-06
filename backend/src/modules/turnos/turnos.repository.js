@@ -87,9 +87,44 @@ async function listTurnosByMedicoRange({ idMedico, desde, hasta }) {
   )
 }
 
+async function findPacienteIdByUserId(idUsuario) {
+  const rows = await query(
+    `SELECT id_paciente
+     FROM pacientes
+     WHERE id_usuario = :idUsuario
+     LIMIT 1`,
+    { idUsuario }
+  )
+  return rows[0]?.id_paciente || null
+}
+
+async function listTurnosByPaciente({ idPaciente, idMedico = null }) {
+  return query(
+    `SELECT
+       t.id_turno,
+       t.id_medico,
+       t.id_clinica,
+       DATE_FORMAT(t.fecha, '%Y-%m-%d') AS fecha_iso,
+       DATE_FORMAT(t.hora, '%H:%i') AS hora,
+       t.estado,
+       c.nombre AS clinica_nombre,
+       m.nombre AS medico_nombre,
+       m.apellido AS medico_apellido
+     FROM turnos t
+     INNER JOIN clinicas c ON c.id_clinica = t.id_clinica
+     INNER JOIN medicos m ON m.id_medico = t.id_medico
+     WHERE t.id_paciente = :idPaciente
+       AND (:idMedico IS NULL OR t.id_medico = :idMedico)
+     ORDER BY t.fecha, t.hora`,
+    { idPaciente, idMedico }
+  )
+}
+
 module.exports = {
   insertTurno,
   findTurnoById,
   updateTurnoEstado,
   listTurnosByMedicoRange,
+  findPacienteIdByUserId,
+  listTurnosByPaciente,
 }

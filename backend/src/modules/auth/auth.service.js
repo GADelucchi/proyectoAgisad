@@ -7,7 +7,6 @@ const {
   findUserByEmail,
   findRoleIdByName,
   existsUsername,
-  findEspecialidadIdByName,
   updateUltimoLogin,
 } = require('./auth.repository')
 
@@ -18,6 +17,7 @@ function buildTokenPayload(user) {
     rol: user.rol,
     username: user.username,
     email: user.email,
+    nombre: user.nombre,
   }
 }
 
@@ -102,6 +102,33 @@ async function ensureObraSocialId(conn, obraSocialNombre) {
     [nombre]
   )
   return insert.insertId
+}
+
+async function ensureEspecialidadId(conn, especialidadNombre) {
+  const nombre = normalizeText(especialidadNombre)
+  if (!nombre) {
+    throw new HttpError(400, 'La especialidad es obligatoria')
+  }
+
+  const [rows] = await conn.execute(
+    'SELECT id_especialidad FROM especialidades WHERE nombre = ? LIMIT 1',
+    [nombre]
+  )
+  if (rows[0]?.id_especialidad) {
+    return rows[0].id_especialidad
+  }
+
+  await conn.execute('INSERT IGNORE INTO especialidades (nombre) VALUES (?)', [nombre])
+
+  const [newRows] = await conn.execute(
+    'SELECT id_especialidad FROM especialidades WHERE nombre = ? LIMIT 1',
+    [nombre]
+  )
+  if (!newRows[0]?.id_especialidad) {
+    throw new HttpError(500, 'No se pudo registrar la especialidad')
+  }
+
+  return newRows[0].id_especialidad
 }
 
 async function createBaseUser(conn, { roleName, email, password, username }) {
@@ -240,10 +267,7 @@ async function registerMedico(input) {
       username: input.username,
     })
 
-    const idEspecialidad = await findEspecialidadIdByName(input.especialidad)
-    if (!idEspecialidad) {
-      throw new HttpError(400, 'La especialidad seleccionada no existe')
-    }
+    const idEspecialidad = await ensureEspecialidadId(conn, input.especialidad)
 
     const idCiudad = await ensureProvinceAndCityId(conn, input.provincia, input.ciudad)
 

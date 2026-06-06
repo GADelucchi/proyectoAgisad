@@ -36,8 +36,37 @@ async function listarPorMedico(req, res, next) {
   }
 }
 
+async function listarMisTurnos(req, res, next) {
+  try {
+    const payload = await turnosService.listarPorPaciente({
+      idMedico: req.query.id_medico,
+      requesterIdUsuario: req.user.idUsuario,
+      requesterRol: req.user.rol,
+    })
+    res.json(payload)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function cancelarPropio(req, res, next) {
+  try {
+    const payload = await turnosService.cancelarPorPaciente({
+      idTurno: req.params.id_turno,
+      motivo: req.body?.motivo,
+      requesterIdUsuario: req.user.idUsuario,
+      requesterRol: req.user.rol,
+    })
+    res.json(payload)
+  } catch (err) {
+    next(err)
+  }
+}
+
 module.exports = {
   crearTurno,
   cambiarEstado,
   listarPorMedico,
+  listarMisTurnos,
+  cancelarPropio,
 }

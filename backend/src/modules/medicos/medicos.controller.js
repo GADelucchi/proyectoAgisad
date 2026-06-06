@@ -26,7 +26,46 @@ async function getDisponibilidad(req, res, next) {
   }
 }
 
+async function getMyTyc(req, res, next) {
+  try {
+    const data = await medicosService.getMyTyc({
+      requesterIdUsuario: req.user.idUsuario,
+      requesterRol: req.user.rol,
+    })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function saveMyTyc(req, res, next) {
+  try {
+    const data = await medicosService.saveMyTyc({
+      texto: req.body?.texto,
+      requesterIdUsuario: req.user.idUsuario,
+      requesterRol: req.user.rol,
+    })
+    res.status(201).json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function listClinicas(req, res, next) {
+  try {
+    const data = await medicosService.listClinicasByMedico({
+      idMedico: Number(req.params.id_medico),
+    })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
 module.exports = {
   listMedicos,
   getDisponibilidad,
+  getMyTyc,
+  saveMyTyc,
+  listClinicas,
 }
