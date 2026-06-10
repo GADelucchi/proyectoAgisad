@@ -1,25 +1,12 @@
 import { Link } from 'react-router-dom'
 import { useState } from 'react'
-import { useAuth } from '../../context/AuthContext'
 import AltaAsistenteForm from '../../components/forms/AltaAsistenteForm'
 import { authApi } from '../../services/auth.api'
 
 export default function PanelGerentePage() {
-  const { demoMode } = useAuth()
   const [asistentesCreados, setAsistentesCreados] = useState([])
 
   async function crearAsistente(payload) {
-    if (demoMode) {
-      const nuevo = {
-        id: Date.now(),
-        nombre: `${payload.nombre} ${payload.apellido}`,
-        usuario: payload.username || payload.email.split('@')[0],
-        estado: payload.permisos?.bloqueado ? 'bloqueada' : 'activa',
-      }
-      setAsistentesCreados((prev) => [nuevo, ...prev])
-      return nuevo
-    }
-
     const response = await authApi.registerAsistente(payload)
     const nuevo = {
       id: response?.id_asistente || Date.now(),

@@ -19,6 +19,86 @@ function getDayOfWeek(dateIso) {
 }
 
 const INDEX_TO_DAY = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab']
+const DAY_TO_INDEX = { Dom: 0, Lun: 1, Mar: 2, Mie: 3, Jue: 4, Vie: 5, Sab: 6 }
+
+function asBool(value) {
+  return value === true || value === 1 || value === '1'
+}
+
+function normalizeRangos(inputRangos) {
+  if (!Array.isArray(inputRangos)) return []
+  const rows = []
+
+  for (const rango of inputRangos) {
+    const inicio = String(rango?.inicio || '').slice(0, 5)
+    const fin = String(rango?.fin || '').slice(0, 5)
+    const duracion = Number(rango?.duracion || 30)
+    if (!inicio || !fin) continue
+
+    const dias = Array.isArray(rango?.dias) && rango.dias.length
+      ? rango.dias
+      : (rango?.dia ? [rango.dia] : [])
+
+    for (const d of dias) {
+      if (DAY_TO_INDEX[d] === undefined) continue
+      rows.push({
+        diaSemana: DAY_TO_INDEX[d],
+        inicio: `${inicio}:00`,
+        fin: `${fin}:00`,
+        duracion: Number.isFinite(duracion) && duracion > 0 ? duracion : 30,
+      })
+    }
+  }
+
+  return rows
+}
+
+function normalizeRangosUnicos(inputRangos) {
+  if (!Array.isArray(inputRangos)) return []
+  return inputRangos
+    .filter((r) => String(r?.frecuencia || '') === 'unica' || Boolean(r?.fecha))
+    .map((r) => {
+      const inicio = String(r?.inicio || '').slice(0, 5)
+      const fin = String(r?.fin || '').slice(0, 5)
+      return {
+        fecha: String(r?.fecha || '').slice(0, 10),
+        inicio: inicio ? `${inicio}:00` : '',
+        fin: fin ? `${fin}:00` : '',
+      }
+    })
+    .filter((r) => r.fecha && r.inicio && r.fin)
+}
+
+function isSlotBlocked({ slotHora, bloqueos }) {
+  const slot = String(slotHora).slice(0, 5)
+  for (const b of bloqueos) {
+    const from = b.hora_inicio ? String(b.hora_inicio).slice(0, 5) : null
+    const to = b.hora_fin ? String(b.hora_fin).slice(0, 5) : null
+    if (!from || !to) return true
+    if (slot >= from && slot < to) return true
+  }
+  return false
+}
+
+function formatLocalDate(date) {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+async function resolveMedicoOrThrow({ requesterIdUsuario, requesterRol }) {
+  if (requesterRol !== 'medico') {
+    throw new HttpError(403, 'Solo medicos pueden realizar esta accion')
+  }
+
+  const medico = await medicosRepo.findMedicoByUserId(requesterIdUsuario)
+  if (!medico?.id_medico) {
+    throw new HttpError(404, 'Medico no encontrado')
+  }
+
+  return medico
+}
 
 async function listMedicos(filters) {
   return medicosRepo.listMedicos(filters)
@@ -36,7 +116,23 @@ async function getDisponibilidad({ idMedico, idClinica, fecha }) {
     diaSemana,
   })
 
-  if (franjas.length === 0) {
+  const extrasDelDia = await medicosRepo.findExtraDisponibilidadByMedicoClinicaFecha({
+    idMedico,
+    idClinica,
+    fecha,
+  })
+
+  const franjasTotales = [
+    ...franjas,
+    ...extrasDelDia.map((e) => ({
+      id_disponibilidad: null,
+      hora_inicio: e.hora_inicio,
+      hora_fin: e.hora_fin,
+      duracion_turno: 30,
+    })),
+  ]
+
+  if (franjasTotales.length === 0) {
     return {
       fecha,
       dia_semana: diaSemana,
@@ -46,19 +142,23 @@ async function getDisponibilidad({ idMedico, idClinica, fecha }) {
 
   const tomadosRows = await medicosRepo.findTurnosTomados({ idMedico, fecha })
   const tomados = new Set(tomadosRows.map(r => String(r.hora).slice(0, 8)))
+  const bloqueosRows = await medicosRepo.listBloqueosByMedico({ idMedico, idClinica })
+  const bloqueosDelDia = bloqueosRows.filter((b) => b.fecha === fecha)
 
   const slots = []
-  for (const franja of franjas) {
+  for (const franja of franjasTotales) {
     const inicio = toMinutes(String(franja.hora_inicio).slice(0, 5))
     const fin = toMinutes(String(franja.hora_fin).slice(0, 5))
     const duracion = Number(franja.duracion_turno) || 30
 
     for (let t = inicio; t + duracion <= fin; t += duracion) {
       const hora = toTime(t)
+      const bloqueado = isSlotBlocked({ slotHora: hora, bloqueos: bloqueosDelDia })
       slots.push({
         hora,
         id_disponibilidad: franja.id_disponibilidad,
-        libre: !tomados.has(hora),
+        bloqueado,
+        libre: !tomados.has(hora) && !bloqueado,
       })
     }
   }
@@ -119,7 +219,7 @@ async function listClinicasByMedico({ idMedico }) {
     throw new HttpError(400, 'id_medico es obligatorio')
   }
 
-  const { clinics, disponibilidad } = await medicosRepo.listClinicasByMedico(Number(idMedico))
+  const { clinics, disponibilidad, disponibilidadUnica } = await medicosRepo.listClinicasByMedico(Number(idMedico))
 
   return clinics.map((clinic) => {
     const rangos = disponibilidad
@@ -136,15 +236,219 @@ async function listClinicasByMedico({ idMedico }) {
         fin: d.hora_fin,
       }))
 
+    const rangosUnicos = disponibilidadUnica
+      .filter((d) => Number(d.id_clinica) === Number(clinic.id_clinica))
+      .map((d, idx) => ({
+        id: Number(`${clinic.id_clinica}9${idx + 1}`),
+        frecuencia: 'unica',
+        fecha: d.fecha,
+        inicio: d.hora_inicio,
+        fin: d.hora_fin,
+      }))
+
     return {
       id: clinic.id_clinica,
       nombre: clinic.nombre,
-      tipo: String(clinic.nombre || '').toLowerCase().includes('virtual') ? 'virtual' : 'presencial',
+      tipo: clinic.link || (!clinic.direccion && String(clinic.nombre || '').toLowerCase().includes('virtual')) ? 'virtual' : 'presencial',
       ciudad: clinic.ciudad || '',
-      direccion: clinic.direccion || '',
+      direccion: clinic.direccion || clinic.link || '',
+      link: clinic.link || clinic.direccion || '',
       rangos,
+      rangos_unicos: rangosUnicos,
     }
   })
+}
+
+async function listMyClinicas({ requesterIdUsuario, requesterRol }) {
+  const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+  return listClinicasByMedico({ idMedico: Number(medico.id_medico) })
+}
+
+async function createMyClinica({ input, requesterIdUsuario, requesterRol }) {
+  const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+
+  const nombre = String(input?.nombre || '').trim()
+  const tipo = asBool(input?.tipo === 'virtual' || input?.tipo_virtual) ? 'virtual' : String(input?.tipo || 'presencial')
+  const direccion = String(input?.direccion || '').trim()
+  const rangos = normalizeRangos(input?.rangos)
+  const rangosUnicos = normalizeRangosUnicos(input?.rangos)
+
+  if (!nombre) throw new HttpError(400, 'nombre es obligatorio')
+  if (rangos.length === 0 && rangosUnicos.length === 0) {
+    throw new HttpError(400, 'Debes enviar al menos un rango semanal o de unica vez')
+  }
+
+  const idCiudad = Number(input?.id_ciudad) || Number(medico.id_ciudad) || Number(await medicosRepo.findAnyCityId())
+  if (!idCiudad) throw new HttpError(400, 'No se pudo determinar una ciudad para el consultorio')
+
+  await medicosRepo.createClinicaWithDisponibilidad({
+    idMedico: Number(medico.id_medico),
+    idCiudad,
+    nombre,
+    direccion,
+    link: String(input?.link || '').trim(),
+    tipo,
+    rangosSemanales: rangos,
+    rangosUnicos,
+  })
+
+  return listClinicasByMedico({ idMedico: Number(medico.id_medico) })
+}
+
+async function updateMyClinica({ idClinica, input, requesterIdUsuario, requesterRol }) {
+  if (!idClinica) throw new HttpError(400, 'id_clinica es obligatorio')
+  const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+
+  const allowed = await medicosRepo.ensureMedicoHasClinica({
+    idMedico: Number(medico.id_medico),
+    idClinica: Number(idClinica),
+  })
+  if (!allowed) throw new HttpError(403, 'El consultorio no pertenece al medico autenticado')
+
+  const nombre = String(input?.nombre || '').trim()
+  const direccion = String(input?.direccion || '').trim()
+  const rangos = normalizeRangos(input?.rangos)
+  const rangosUnicos = normalizeRangosUnicos(input?.rangos)
+  if (!nombre) throw new HttpError(400, 'nombre es obligatorio')
+  if (rangos.length === 0 && rangosUnicos.length === 0) {
+    throw new HttpError(400, 'Debes enviar al menos un rango semanal o de unica vez')
+  }
+
+  await medicosRepo.updateClinicaWithDisponibilidad({
+    idMedico: Number(medico.id_medico),
+    idClinica: Number(idClinica),
+    nombre,
+    direccion,
+    link: String(input?.link || '').trim(),
+    tipo: input?.tipo,
+    rangosSemanales: rangos,
+    rangosUnicos,
+  })
+
+  return listClinicasByMedico({ idMedico: Number(medico.id_medico) })
+}
+
+async function deleteMyClinica({ idClinica, requesterIdUsuario, requesterRol }) {
+  if (!idClinica) throw new HttpError(400, 'id_clinica es obligatorio')
+  const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+
+  const allowed = await medicosRepo.ensureMedicoHasClinica({
+    idMedico: Number(medico.id_medico),
+    idClinica: Number(idClinica),
+  })
+  if (!allowed) throw new HttpError(403, 'El consultorio no pertenece al medico autenticado')
+
+  await medicosRepo.deleteClinicaByMedico({
+    idMedico: Number(medico.id_medico),
+    idClinica: Number(idClinica),
+  })
+
+  return { ok: true }
+}
+
+async function listMyBloqueos({ idClinica, requesterIdUsuario, requesterRol }) {
+  const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+
+  if (idClinica) {
+    const allowed = await medicosRepo.ensureMedicoHasClinica({
+      idMedico: Number(medico.id_medico),
+      idClinica: Number(idClinica),
+    })
+    if (!allowed) throw new HttpError(403, 'El consultorio no pertenece al medico autenticado')
+  }
+
+  return medicosRepo.listBloqueosByMedico({
+    idMedico: Number(medico.id_medico),
+    idClinica: idClinica ? Number(idClinica) : null,
+  })
+}
+
+async function createMyBloqueo({ input, requesterIdUsuario, requesterRol }) {
+  const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+
+  const idClinica = Number(input?.id_clinica)
+  const desde = String(input?.fecha_desde || input?.fecha || '')
+  const hasta = String(input?.fecha_hasta || input?.fecha || '')
+  const motivo = String(input?.motivo || '').trim() || null
+  const horaInicio = input?.hora_inicio ? `${String(input.hora_inicio).slice(0, 5)}:00` : null
+  const horaFin = input?.hora_fin ? `${String(input.hora_fin).slice(0, 5)}:00` : null
+
+  if (!idClinica) throw new HttpError(400, 'id_clinica es obligatorio')
+  if (!desde || !hasta) throw new HttpError(400, 'fecha_desde y fecha_hasta son obligatorias')
+
+  const allowed = await medicosRepo.ensureMedicoHasClinica({
+    idMedico: Number(medico.id_medico),
+    idClinica,
+  })
+  if (!allowed) throw new HttpError(403, 'El consultorio no pertenece al medico autenticado')
+
+  let cursor = new Date(`${desde}T00:00:00`)
+  const end = new Date(`${hasta}T00:00:00`)
+  if (Number.isNaN(cursor.getTime()) || Number.isNaN(end.getTime()) || cursor > end) {
+    throw new HttpError(400, 'Rango de fechas invalido')
+  }
+
+  while (cursor <= end) {
+    const fecha = formatLocalDate(cursor)
+    await medicosRepo.createBloqueo({
+      idMedico: Number(medico.id_medico),
+      idClinica,
+      fecha,
+      horaInicio,
+      horaFin,
+      motivo,
+    })
+    cursor.setDate(cursor.getDate() + 1)
+  }
+
+  return listMyBloqueos({ requesterIdUsuario, requesterRol, idClinica: null })
+}
+
+async function updateMyBloqueo({ idExcepcion, input, requesterIdUsuario, requesterRol }) {
+  if (!idExcepcion) throw new HttpError(400, 'id_excepcion es obligatorio')
+  const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+
+  const bloqueo = await medicosRepo.findBloqueoById(Number(idExcepcion))
+  if (!bloqueo || Number(bloqueo.id_medico) !== Number(medico.id_medico)) {
+    throw new HttpError(404, 'Bloqueo no encontrado')
+  }
+
+  const idClinica = Number(input?.id_clinica || bloqueo.id_clinica)
+  const fecha = String(input?.fecha || '')
+  const motivo = String(input?.motivo || '').trim() || null
+  const horaInicio = input?.hora_inicio ? `${String(input.hora_inicio).slice(0, 5)}:00` : null
+  const horaFin = input?.hora_fin ? `${String(input.hora_fin).slice(0, 5)}:00` : null
+
+  const allowed = await medicosRepo.ensureMedicoHasClinica({
+    idMedico: Number(medico.id_medico),
+    idClinica,
+  })
+  if (!allowed) throw new HttpError(403, 'El consultorio no pertenece al medico autenticado')
+  if (!fecha) throw new HttpError(400, 'fecha es obligatoria')
+
+  await medicosRepo.updateBloqueo({
+    idExcepcion: Number(idExcepcion),
+    idClinica,
+    fecha,
+    horaInicio,
+    horaFin,
+    motivo,
+  })
+
+  return listMyBloqueos({ requesterIdUsuario, requesterRol, idClinica: null })
+}
+
+async function deleteMyBloqueo({ idExcepcion, requesterIdUsuario, requesterRol }) {
+  if (!idExcepcion) throw new HttpError(400, 'id_excepcion es obligatorio')
+  const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+
+  const bloqueo = await medicosRepo.findBloqueoById(Number(idExcepcion))
+  if (!bloqueo || Number(bloqueo.id_medico) !== Number(medico.id_medico)) {
+    throw new HttpError(404, 'Bloqueo no encontrado')
+  }
+
+  await medicosRepo.deleteBloqueo(Number(idExcepcion))
+  return { ok: true }
 }
 
 module.exports = {
@@ -153,4 +457,12 @@ module.exports = {
   getMyTyc,
   saveMyTyc,
   listClinicasByMedico,
+  listMyClinicas,
+  createMyClinica,
+  updateMyClinica,
+  deleteMyClinica,
+  listMyBloqueos,
+  createMyBloqueo,
+  updateMyBloqueo,
+  deleteMyBloqueo,
 }

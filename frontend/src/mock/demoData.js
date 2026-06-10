@@ -301,6 +301,23 @@ export function getPendingAppointmentsByPatient(patientId) {
     })
 }
 
+export function getPendingAppointmentsByDoctor(doctorId, dateIso = null) {
+  if (!doctorId) return []
+
+  const appointments = parseStoredAppointments()
+  return appointments
+    .filter(a => (
+      String(a.doctorId) === String(doctorId) &&
+      a.status === 'pendiente' &&
+      (!dateIso || a.dateIso === dateIso)
+    ))
+    .sort((a, b) => {
+      const aKey = `${a.dateIso} ${a.time}`
+      const bKey = `${b.dateIso} ${b.time}`
+      return aKey.localeCompare(bKey)
+    })
+}
+
 export function cancelAppointment(appointmentId) {
   const appointments = parseStoredAppointments()
   const updated = appointments.map(a =>

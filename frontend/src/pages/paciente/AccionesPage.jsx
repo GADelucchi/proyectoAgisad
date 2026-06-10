@@ -1,17 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Calendar, XCircle, FileText, MessageSquare, ChevronLeft } from 'lucide-react'
-import { getDemoDoctorById } from '../../mock/demoData'
+import { medicosApi } from '../../services/medicos.api'
 import { pacientesApi } from '../../services/pacientes.api'
-import { useAuth } from '../../context/AuthContext'
 import './AccionesPage.css'
 
-const ACCIONES_POR_PLAN = {
-  basico:       ['receta'],
-  intermedio:   ['receta', 'turno', 'cancelar'],
-  profesional:  ['receta', 'turno', 'cancelar', 'mensaje'],
-  empresarial:  ['receta', 'turno', 'cancelar', 'mensaje'],
-}
+const ACCIONES_POR_DEFECTO = ['receta', 'turno', 'cancelar', 'mensaje']
 
 const ACCIONES_CONFIG = {
   turno:   { label: 'Solicitar turno',  icon: <Calendar size={32} />,    ruta: 'turno' },
@@ -21,80 +15,46 @@ const ACCIONES_CONFIG = {
 }
 
 const ACCIONES_CON_TERMINOS = ['receta', 'turno']
-const TERMINOS_KEY = 'agisad-terms-by-doctor'
-const TERMINOS_ACEPTED_KEY = 'agisad-tyc-acepted'
 const TERMINOS_PREDETERMINADOS = 'Estos términos y condiciones regulan la atención a través de Agisad. La solicitud de turnos, recetas y mensajes no reemplaza una consulta médica de urgencia. Los datos personales serán tratados de forma confidencial según normativa vigente.'
-
-// Hash determinístico del texto de los términos para detectar cambios
-function hashText(text) {
-  let h = 0
-  for (let i = 0; i < text.length; i++) {
-    h = (Math.imul(31, h) + text.charCodeAt(i)) | 0
-  }
-  return String(h)
-}
-
-function getAceptedHash(patientId, medicoId) {
-  try {
-    const stored = JSON.parse(localStorage.getItem(TERMINOS_ACEPTED_KEY) || '{}')
-    return stored?.[String(patientId)]?.[String(medicoId)] ?? null
-  } catch {
-    return null
-  }
-}
-
-function saveAceptedHash(patientId, medicoId, hash) {
-  try {
-    const stored = JSON.parse(localStorage.getItem(TERMINOS_ACEPTED_KEY) || '{}')
-    if (!stored[String(patientId)]) stored[String(patientId)] = {}
-    stored[String(patientId)][String(medicoId)] = hash
-    localStorage.setItem(TERMINOS_ACEPTED_KEY, JSON.stringify(stored))
-  } catch {
-    // localStorage no disponible: ignorar
-  }
-}
 
 export default function AccionesPage() {
   const { medicoId } = useParams()
   const navigate = useNavigate()
-  const { usuario, demoMode } = useAuth()
-  const patientId = usuario?.idUsuario || usuario?.id || null
-  const medicoDemo = getDemoDoctorById(medicoId)
-  const medico = useMemo(() => {
-    if (medicoDemo) return medicoDemo
-    return {
-      id: Number(medicoId),
-      nombre: `Médico ${medicoId}`,
-      especialidad: 'Especialidad',
-      matricula: '-',
-      plan: 'profesional',
-    }
-  }, [medicoDemo, medicoId])
+  const [medico, setMedico] = useState({
+    id: Number(medicoId),
+    nombre: `Médico ${medicoId}`,
+    especialidad: 'Especialidad',
+    matricula: '-',
+  })
   const [showAceptacion, setShowAceptacion] = useState(false)
   const [showTerminos, setShowTerminos] = useState(false)
   const [aceptaTerminos, setAceptaTerminos] = useState(false)
   const [accionPendiente, setAccionPendiente] = useState(null)
   const [tycApi, setTycApi] = useState(null)
 
-  const accionesDisponibles = ACCIONES_POR_PLAN[medico.plan] || []
-
-  const terminosPorMedico = JSON.parse(localStorage.getItem(TERMINOS_KEY) || '{}')
-  const terminosActuales = terminosPorMedico[medicoId] || TERMINOS_PREDETERMINADOS
-  const terminosHash = hashText(terminosActuales)
+  const accionesDisponibles = ACCIONES_POR_DEFECTO
 
   useEffect(() => {
     let cancelled = false
 
-    async function loadTyc() {
-      if (demoMode) {
-        setTycApi(null)
-        return
-      }
-
+    async function loadData() {
       try {
-        const response = await pacientesApi.getTycMedico(medicoId)
+        const [medicosRows, tyc] = await Promise.all([
+          medicosApi.list(''),
+          pacientesApi.getTycMedico(medicoId),
+        ])
+
+        const found = (Array.isArray(medicosRows) ? medicosRows : []).find((m) => String(m.id) === String(medicoId))
         if (!cancelled) {
-          setTycApi(response)
+          if (found) {
+            setMedico({
+              id: Number(found.id),
+              nombre: found.nombre || `Médico ${medicoId}`,
+              especialidad: found.especialidad || 'Especialidad',
+              matricula: found.matricula || '-',
+            })
+          }
+          setTycApi(tyc)
         }
       } catch {
         if (!cancelled) {
@@ -103,21 +63,16 @@ export default function AccionesPage() {
       }
     }
 
-    loadTyc()
+    loadData()
 
     return () => {
       cancelled = true
     }
-  }, [demoMode, medicoId])
+  }, [medicoId])
 
   function yAceptoTerminos() {
-    if (!demoMode) {
-      if (!tycApi || !tycApi.requiere_aceptacion) return true
-      return Boolean(tycApi.aceptado)
-    }
-
-    if (!patientId) return false
-    return getAceptedHash(patientId, medicoId) === terminosHash
+    if (!tycApi || !tycApi.requiere_aceptacion) return true
+    return Boolean(tycApi.aceptado)
   }
 
   function navegarAccion(key) {
@@ -138,9 +93,7 @@ export default function AccionesPage() {
   async function confirmarAceptacion() {
     if (!accionPendiente || !aceptaTerminos) return
 
-    if (demoMode) {
-      saveAceptedHash(patientId, medicoId, terminosHash)
-    } else if (tycApi?.tyc?.id_tyc) {
+    if (tycApi?.tyc?.id_tyc) {
       await pacientesApi.aceptarTycMedico(medicoId, tycApi.tyc.id_tyc)
       setTycApi(prev => (prev ? { ...prev, aceptado: true } : prev))
     }
@@ -149,9 +102,7 @@ export default function AccionesPage() {
     navegarAccion(accionPendiente)
   }
 
-  const textoTerminosModal = demoMode
-    ? terminosActuales
-    : tycApi?.tyc?.texto || TERMINOS_PREDETERMINADOS
+  const textoTerminosModal = tycApi?.tyc?.texto || TERMINOS_PREDETERMINADOS
 
   return (
     <div className="acciones-page">

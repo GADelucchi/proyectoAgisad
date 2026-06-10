@@ -114,6 +114,19 @@ async function createRecetaSolicitud({ idPaciente, idMedico, tipo, itemsJson, en
   }
 }
 
+async function createMensajeSolicitud({ idPaciente, idMedico, asunto, mensaje, enviadoAEmail }) {
+  const result = await query(
+    `INSERT INTO mensaje_solicitudes (id_paciente, id_medico, asunto, mensaje, enviado_a_email)
+     VALUES (:idPaciente, :idMedico, :asunto, :mensaje, :enviadoAEmail)`,
+    { idPaciente, idMedico, asunto, mensaje, enviadoAEmail }
+  )
+
+  return {
+    id_solicitud: result.insertId,
+    estado: 'enviada',
+  }
+}
+
 /**
  * Actualiza los campos editables del perfil del paciente.
  */
@@ -195,6 +208,7 @@ module.exports = {
   findPacienteByUserId,
   findMedicoRecetaById,
   createRecetaSolicitud,
+  createMensajeSolicitud,
   updatePaciente,
   findMedicoIdByUserId,
   hasAsistenteAccessToMedico,

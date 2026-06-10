@@ -88,4 +88,28 @@ async function sendRecetaSolicitudEmail({ to, medico, paciente, tipo, items }) {
   })
 }
 
-module.exports = { sendPasswordResetEmail, sendRecetaSolicitudEmail }
+async function sendPacienteMensajeEmail({ to, medico, paciente, asunto, mensaje }) {
+  await transporter.sendMail({
+    from: env.MAIL_FROM,
+    to,
+    subject: `Nuevo mensaje de paciente — ${asunto}`,
+    text: [
+      'Nuevo mensaje recibido en Agisad.',
+      '',
+      `Medico: Dr./Dra. ${medico.nombre} ${medico.apellido}`,
+      `Paciente: ${paciente.nombre} ${paciente.apellido}`,
+      `DNI paciente: ${paciente.dni || 'N/D'}`,
+      `Email paciente: ${paciente.email || 'N/D'}`,
+      `Obra social: ${paciente.obra_social || 'Particular / Sin cobertura'}`,
+      `Nro afiliado: ${paciente.nro_obra_social || 'N/D'}`,
+      '',
+      `Asunto: ${asunto}`,
+      'Mensaje:',
+      mensaje,
+      '',
+      '— Agisad',
+    ].join('\n'),
+  })
+}
+
+module.exports = { sendPasswordResetEmail, sendRecetaSolicitudEmail, sendPacienteMensajeEmail }

@@ -5,6 +5,7 @@ const {
   findPacienteByUserId,
   findMedicoRecetaById,
   createRecetaSolicitud,
+  createMensajeSolicitud,
   updatePaciente,
   findMedicoIdByUserId,
   hasAsistenteAccessToMedico,
@@ -12,7 +13,7 @@ const {
   hasPacienteAcceptedTyc,
   insertPacienteTycAceptacion,
 } = require('./pacientes.repository')
-const { sendRecetaSolicitudEmail } = require('../../utils/mailer')
+const { sendRecetaSolicitudEmail, sendPacienteMensajeEmail } = require('../../utils/mailer')
 
 /**
  * Lista pacientes del médico (o asistente actuando en nombre de un médico).
@@ -135,6 +136,51 @@ async function solicitarReceta({ idMedico, tipo, items, requesterIdUsuario, requ
   }
 }
 
+async function solicitarMensaje({ idMedico, asunto, mensaje, requesterIdUsuario, requesterRol }) {
+  if (requesterRol !== 'paciente') {
+    throw new HttpError(403, 'Solo pacientes pueden enviar mensajes')
+  }
+
+  const targetMedico = Number(idMedico)
+  if (!targetMedico) {
+    throw new HttpError(400, 'id_medico invalido')
+  }
+
+  const asuntoClean = String(asunto || '').trim()
+  const mensajeClean = String(mensaje || '').trim()
+  if (!asuntoClean) throw new HttpError(400, 'El asunto es obligatorio')
+  if (!mensajeClean) throw new HttpError(400, 'El mensaje es obligatorio')
+  if (asuntoClean.length > 150) throw new HttpError(400, 'El asunto no puede superar 150 caracteres')
+
+  const paciente = await findPacienteByUserId(requesterIdUsuario)
+  if (!paciente) {
+    throw new HttpError(404, 'Paciente no encontrado')
+  }
+
+  const medico = await findMedicoRecetaById(targetMedico)
+  if (!medico) {
+    throw new HttpError(404, 'Médico no encontrado')
+  }
+
+  const insert = await createMensajeSolicitud({
+    idPaciente: paciente.id_paciente,
+    idMedico: medico.id_medico,
+    asunto: asuntoClean,
+    mensaje: mensajeClean,
+    enviadoAEmail: medico.email,
+  })
+
+  await sendPacienteMensajeEmail({
+    to: medico.email,
+    medico,
+    paciente,
+    asunto: asuntoClean,
+    mensaje: mensajeClean,
+  })
+
+  return insert
+}
+
 async function getTycByMedico({ idMedico, requesterIdUsuario, requesterRol }) {
   if (requesterRol !== 'paciente') {
     throw new HttpError(403, 'Solo pacientes pueden consultar TyC de médicos')
@@ -214,6 +260,7 @@ module.exports = {
   getPaciente,
   patchPaciente,
   solicitarReceta,
+  solicitarMensaje,
   getTycByMedico,
   aceptarTycByMedico,
 }

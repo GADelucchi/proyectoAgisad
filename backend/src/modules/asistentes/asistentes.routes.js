@@ -4,6 +4,13 @@ const ctrl = require('./asistentes.controller')
 
 const router = Router()
 
+router.get(
+  '/me/access',
+  requireAuth,
+  requireRoles('asistente'),
+  ctrl.meAccess
+)
+
 router.post(
   '/',
   requireAuth,

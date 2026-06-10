@@ -3,32 +3,22 @@ import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, MapPin, Stethoscope } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
-import { getDemoDoctors, getPendingAppointmentsByPatient } from '../../mock/demoData'
 import { medicosApi } from '../../services/medicos.api'
 import { turnosApi } from '../../services/turnos.api'
 import { formatDateDdMmYyyy, formatTime24h } from '../../utils/dateFormat'
 import './BuscadorMedicoPage.css'
 
 export default function BuscadorMedicoPage() {
-  const { usuario, demoMode } = useAuth()
+  const { usuario } = useAuth()
   const [query, setQuery] = useState('')
-  const [tick, setTick] = useState(0)
   const [medicosApiRows, setMedicosApiRows] = useState([])
   const [turnosApiRows, setTurnosApiRows] = useState([])
   const navigate = useNavigate()
 
   useEffect(() => {
-    const refresh = () => setTick(t => t + 1)
-    window.addEventListener('agisad-demo-data-changed', refresh)
-    return () => window.removeEventListener('agisad-demo-data-changed', refresh)
-  }, [])
-
-  useEffect(() => {
     let cancelled = false
 
     async function loadRealData() {
-      if (demoMode) return
-
       try {
         const [medicosRows, turnosRows] = await Promise.all([
           medicosApi.list(query),
@@ -51,11 +41,10 @@ export default function BuscadorMedicoPage() {
     return () => {
       cancelled = true
     }
-  }, [demoMode, query])
+  }, [query])
 
-  const medicos = demoMode ? getDemoDoctors(tick) : medicosApiRows
-  const patientId = usuario?.idUsuario || usuario?.id || null
-  const turnosPendientes = demoMode ? getPendingAppointmentsByPatient(patientId) : turnosApiRows
+  const medicos = medicosApiRows
+  const turnosPendientes = turnosApiRows
 
   const resultados = medicos.filter(m =>
     m.nombre.toLowerCase().includes(query.toLowerCase()) ||

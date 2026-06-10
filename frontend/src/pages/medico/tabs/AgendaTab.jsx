@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAuth } from '../../../context/AuthContext'
-import { getClinicsByDoctor } from '../../../mock/demoData'
-import { formatDateDdMmYyyy } from '../../../utils/dateFormat'
+import { medicosApi } from '../../../services/medicos.api'
+import { turnosApi } from '../../../services/turnos.api'
+import { formatDateDdMmYyyy, formatTime24h } from '../../../utils/dateFormat'
 import './AgendaTab.css'
-
-const HORARIOS_BASE = ['09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30','14:00','14:30','15:00','15:30','16:00','16:30']
 
 function pad(n) { return String(n).padStart(2, '0') }
 function fechaStr(d) { return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}` }
@@ -24,36 +23,61 @@ function addDays(date, days) {
   return next
 }
 
-function createInitialTurnos(clinics) {
-  const today = fechaStr(new Date())
-  if (!clinics.length) return {}
-  return {
-    [clinics[0].id]: {
-      [today]: [
-        { hora: '09:00', paciente: 'Paciente demo', tipo: 'Seguimiento', estado: 'pendiente' },
-      ],
-    },
-  }
+function estadoLabel(estado) {
+  if (estado === 'asistio') return 'Asistio'
+  if (estado === 'no_asistio') return 'No asistio'
+  if (estado === 'cancelado') return 'Cancelado'
+  return 'Pendiente'
 }
 
 export default function AgendaTab({ doctorId, readOnly = false }) {
   const { usuario } = useAuth()
-  const ownerDoctorId = doctorId || (usuario?.rol === 'medico' ? usuario.id : 1)
-  const [consultorios, setConsultorios] = useState(() => getClinicsByDoctor(ownerDoctorId))
+  const ownerDoctorId = doctorId || (usuario?.rol === 'medico' ? (usuario?.idUsuario || usuario?.id) : null)
+  const [consultorios, setConsultorios] = useState([])
   const [vista, setVista] = useState('dia') // 'dia' | 'semana'
   const [fecha, setFecha] = useState(new Date())
-  const [turnosByConsultorio, setTurnosByConsultorio] = useState(() => createInitialTurnos(consultorios))
+  const [turnos, setTurnos] = useState([])
 
   useEffect(() => {
-    const refresh = () => setConsultorios(getClinicsByDoctor(ownerDoctorId))
-    window.addEventListener('agisad-demo-data-changed', refresh)
-    return () => window.removeEventListener('agisad-demo-data-changed', refresh)
+    if (!ownerDoctorId) {
+      setConsultorios([])
+      return
+    }
+    let cancelled = false
+    medicosApi.listClinicasByMedico(ownerDoctorId)
+      .then((rows) => {
+        if (!cancelled) setConsultorios(Array.isArray(rows) ? rows : [])
+      })
+      .catch(() => {
+        if (!cancelled) setConsultorios([])
+      })
+    return () => {
+      cancelled = true
+    }
   }, [ownerDoctorId])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setTurnosByConsultorio(createInitialTurnos(consultorios))
-  }, [consultorios])
+    if (!ownerDoctorId) {
+      setTurnos([])
+      return
+    }
+    let cancelled = false
+    const desde = vista === 'dia' ? fechaStr(fecha) : fechaStr(startOfWeek(fecha))
+    const hasta = vista === 'dia' ? fechaStr(fecha) : fechaStr(addDays(startOfWeek(fecha), 6))
+
+    turnosApi
+      .listarPorMedico({ idMedico: ownerDoctorId, desde, hasta })
+      .then((rows) => {
+        if (!cancelled) setTurnos(Array.isArray(rows) ? rows : [])
+      })
+      .catch(() => {
+        if (!cancelled) setTurnos([])
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [ownerDoctorId, fecha, vista])
 
   function moverDia(n) {
     const d = new Date(fecha)
@@ -65,66 +89,41 @@ export default function AgendaTab({ doctorId, readOnly = false }) {
   const semanaInicio = useMemo(() => startOfWeek(fecha), [fecha])
   const semanaDias = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(semanaInicio, i)), [semanaInicio])
 
+  const turnosByClinicaAndDate = useMemo(() => {
+    const map = {}
+    for (const t of turnos) {
+      const byClinica = map[t.id_clinica] || {}
+      const byDate = byClinica[t.fecha] || []
+      byDate.push(t)
+      byClinica[t.fecha] = byDate
+      map[t.id_clinica] = byClinica
+    }
+    return map
+  }, [turnos])
+
   function getDayStats(dateObj) {
     const key = fechaStr(dateObj)
     const ocupados = consultorios.reduce((acc, consultorio) => {
-      const turnosDia = turnosByConsultorio[consultorio.id]?.[key] || []
+      const turnosDia = turnosByClinicaAndDate[consultorio.id]?.[key] || []
       return acc + turnosDia.length
     }, 0)
-    const capacidad = consultorios.length * HORARIOS_BASE.length
+    const capacidad = consultorios.length * 16
     return {
       ocupados,
       libres: Math.max(capacidad - ocupados, 0),
     }
   }
 
-  function marcarEstado(consultorioId, dateKey, hora, estado) {
-    setTurnosByConsultorio(prev => {
-      const dayTurnos = prev[consultorioId]?.[dateKey] || []
-      const updatedDayTurnos = dayTurnos.map(t => (t.hora === hora ? { ...t, estado } : t))
-      return {
-        ...prev,
-        [consultorioId]: {
-          ...(prev[consultorioId] || {}),
-          [dateKey]: updatedDayTurnos,
-        },
-      }
-    })
-  }
-
-  function cancelarTurno(consultorioId, dateKey, hora) {
-    setTurnosByConsultorio(prev => {
-      const dayTurnos = prev[consultorioId]?.[dateKey] || []
-      const updatedDayTurnos = dayTurnos.filter(t => t.hora !== hora)
-      return {
-        ...prev,
-        [consultorioId]: {
-          ...(prev[consultorioId] || {}),
-          [dateKey]: updatedDayTurnos,
-        },
-      }
-    })
-  }
-
-  function agendarTurnoDemo(consultorioId, dateKey, hora) {
-    setTurnosByConsultorio(prev => {
-      const dayTurnos = prev[consultorioId]?.[dateKey] || []
-      if (dayTurnos.some(t => t.hora === hora)) return prev
-      return {
-        ...prev,
-        [consultorioId]: {
-          ...(prev[consultorioId] || {}),
-          [dateKey]: [...dayTurnos, { hora, paciente: 'Paciente demo', tipo: 'Seguimiento', estado: 'pendiente' }],
-        },
-      }
-    })
+  async function marcarEstado(idTurno, estado) {
+    await turnosApi.cambiarEstado(idTurno, estado)
+    setTurnos((prev) => prev.map((t) => (t.id_turno === idTurno ? { ...t, estado } : t)))
   }
 
   function renderWeekSummary(consultorio, dateObj) {
     const key = fechaStr(dateObj)
-    const turnosDia = turnosByConsultorio[consultorio.id]?.[key] || []
-    const ocupados = turnosDia.sort((a, b) => a.hora.localeCompare(b.hora))
-    const libres = Math.max(HORARIOS_BASE.length - ocupados.length, 0)
+    const turnosDia = turnosByClinicaAndDate[consultorio.id]?.[key] || []
+    const ocupados = [...turnosDia].sort((a, b) => String(a.hora).localeCompare(String(b.hora)))
+    const libres = Math.max(16 - ocupados.length, 0)
 
     return (
       <div className="agenda-week-consultorio">
@@ -139,13 +138,11 @@ export default function AgendaTab({ doctorId, readOnly = false }) {
           <div className="agenda-week-turnos">
             {ocupados.slice(0, 3).map(t => (
               <div key={`${consultorio.id}-${key}-${t.hora}`} className="agenda-week-turno-item">
-                <span className="agenda-week-turno-hora">{t.hora}</span>
+                <span className="agenda-week-turno-hora">{formatTime24h(t.hora)}</span>
                 <div className="agenda-week-turno-meta">
-                  <span className="badge badge-primary">{t.tipo}</span>
-                  {t.estado === 'asistio' && <span className="badge badge-success">Asistio</span>}
-                  {t.estado === 'no_asistio' && <span className="badge badge-error">No asistio</span>}
-                  {t.estado === 'pendiente' && <span className="badge badge-warning">Pendiente</span>}
-                  <span className="agenda-week-turno-paciente">{t.paciente}</span>
+                  <span className="badge badge-primary">Consulta</span>
+                  <span className="badge badge-warning">{estadoLabel(t.estado)}</span>
+                  <span className="agenda-week-turno-paciente">{`${t.paciente_nombre} ${t.paciente_apellido}`}</span>
                 </div>
               </div>
             ))}
@@ -176,46 +173,33 @@ export default function AgendaTab({ doctorId, readOnly = false }) {
         <div className="agenda-columnas">
           {consultorios.map(c => {
             const key = fechaStr(fecha)
-            const turnosDia = turnosByConsultorio[c.id]?.[key] || []
+            const turnosDia = turnosByClinicaAndDate[c.id]?.[key] || []
             return (
               <div key={c.id} className="agenda-columna surface-raised">
                 <div className="agenda-col-header">
                   <span>{c.nombre}</span>
                   <span className="agenda-col-sub">{`${16 - (turnosDia?.length || 0)} libres`}</span>
                 </div>
-                {HORARIOS_BASE.map(h => {
-                  const t = turnosDia.find(x => x.hora === h)
-                  return (
-                    <div key={h} className={`agenda-slot ${t ? 'ocupado' : ''}`}>
-                      <span className="agenda-slot-hora">{h}</span>
-                      {t ? (
-                        <div className="agenda-slot-turno">
-                          <div>
-                            <span className="badge badge-primary" style={{ marginRight: 6 }}>{t.tipo}</span>
-                            {t.estado === 'asistio' && <span className="badge badge-success" style={{ marginRight: 6 }}>Asistio</span>}
-                            {t.estado === 'no_asistio' && <span className="badge badge-error" style={{ marginRight: 6 }}>No asistio</span>}
-                            {t.estado === 'pendiente' && <span className="badge badge-warning" style={{ marginRight: 6 }}>Pendiente</span>}
-                            <span className="agenda-paciente">{t.paciente}</span>
-                          </div>
-                          {!readOnly && (
-                            <div className="agenda-slot-acciones">
-                              <button className="agenda-accion-btn asistio" onClick={() => marcarEstado(c.id, key, h, 'asistio')}>Asistio</button>
-                              <button className="agenda-accion-btn no-asistio" onClick={() => marcarEstado(c.id, key, h, 'no_asistio')}>No asistio</button>
-                              <button className="agenda-accion-btn cancelar" onClick={() => cancelarTurno(c.id, key, h)}>Cancelar</button>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="agenda-slot-libre">
-                          <span className="badge badge-muted">Libre</span>
-                          {!readOnly && (
-                            <button className="agenda-agendar-btn" onClick={() => agendarTurnoDemo(c.id, key, h)}><Plus size={13} /> Agendar</button>
-                          )}
+                {turnosDia.length === 0 && <p className="agenda-no-trabaja">Sin turnos para este día.</p>}
+                {turnosDia.map((t) => (
+                  <div key={t.id_turno} className="agenda-slot ocupado">
+                    <span className="agenda-slot-hora">{formatTime24h(t.hora)}</span>
+                    <div className="agenda-slot-turno">
+                      <div>
+                        <span className="badge badge-primary" style={{ marginRight: 6 }}>Consulta</span>
+                        <span className="badge badge-warning" style={{ marginRight: 6 }}>{estadoLabel(t.estado)}</span>
+                        <span className="agenda-paciente">{`${t.paciente_nombre} ${t.paciente_apellido}`}</span>
+                      </div>
+                      {!readOnly && (
+                        <div className="agenda-slot-acciones">
+                          <button className="agenda-accion-btn asistio" onClick={() => marcarEstado(t.id_turno, 'asistio')}>Asistio</button>
+                          <button className="agenda-accion-btn no-asistio" onClick={() => marcarEstado(t.id_turno, 'no_asistio')}>No asistio</button>
+                          <button className="agenda-accion-btn cancelar" onClick={() => marcarEstado(t.id_turno, 'cancelado')}>Cancelar</button>
                         </div>
                       )}
                     </div>
-                  )
-                })}
+                  </div>
+                ))}
               </div>
             )
           })}

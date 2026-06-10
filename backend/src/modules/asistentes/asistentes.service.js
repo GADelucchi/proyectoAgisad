@@ -12,6 +12,7 @@ const {
   findClinicasByGerenteId,
   insertAsistenteClinica,
   findAsistenteIdByUserId,
+  findAsistenteAccessByUserId,
 } = require('./asistentes.repository')
 
 function normalizeText(value) {
@@ -178,9 +179,34 @@ async function createAsistente(input, requester) {
   }
 }
 
+async function getMyAccess({ requesterIdUsuario, requesterRol }) {
+  if (requesterRol !== 'asistente') {
+    throw new HttpError(403, 'Solo asistentes pueden consultar su acceso')
+  }
+
+  const access = await findAsistenteAccessByUserId(requesterIdUsuario)
+  if (!access) {
+    throw new HttpError(404, 'No se encontró acceso para este asistente')
+  }
+
+  return {
+    doctorId: access.id_medico,
+    assistantId: access.id_asistente,
+    blocked: Boolean(access.bloqueado),
+    permissions: {
+      agenda: Boolean(access.agenda),
+      pacientes: Boolean(access.pacientes),
+      mensajes: Boolean(access.mensajes),
+      recetas: Boolean(access.recetas),
+      configuracion: Boolean(access.configuracion),
+    },
+  }
+}
+
 module.exports = {
   listAsistentes,
   getAsistente,
   patchPermisos,
   createAsistente,
+  getMyAccess,
 }

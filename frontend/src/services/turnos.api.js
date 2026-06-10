@@ -15,10 +15,20 @@ function mapTurno(row) {
 
 export const turnosApi = {
   crear: (data) => api.post('/turnos', data),
+  listarPorMedico: async ({ idMedico, desde, hasta }) => {
+    const qs = new URLSearchParams({
+      id_medico: String(idMedico),
+      desde: String(desde),
+      hasta: String(hasta),
+    })
+    return api.get(`/turnos?${qs.toString()}`)
+  },
   listarMisTurnos: async ({ idMedico } = {}) => {
     const q = idMedico ? `?id_medico=${encodeURIComponent(idMedico)}` : ''
     const rows = await api.get(`/turnos/mis${q}`)
     return Array.isArray(rows) ? rows.map(mapTurno) : []
   },
+  cambiarEstado: (idTurno, estado, motivo) =>
+    api.patch(`/turnos/${idTurno}/estado`, { estado, motivo }),
   cancelarPropio: (idTurno, motivo) => api.patch(`/turnos/${idTurno}/cancelar`, { motivo }),
 }

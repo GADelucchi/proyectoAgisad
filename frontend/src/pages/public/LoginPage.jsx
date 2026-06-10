@@ -7,7 +7,7 @@ import PasswordInput from '../../components/ui/PasswordInput'
 import './AuthPages.css'
 
 export default function LoginPage() {
-  const { login, demoMode } = useAuth()
+  const { login } = useAuth()
   const navigate = useNavigate()
   const [form, setForm] = useState({ email: '', password: '' })
   const [error, setError] = useState('')
@@ -105,14 +105,8 @@ export default function LoginPage() {
         </p>
 
         <div className="auth-demo">
-          <p className="auth-demo-title">Cuentas demo</p>
-          <code>medico@demo.com</code>
-          <code>paciente@demo.com</code>
-          <code>asistente@demo.com</code>
-          <code>gerente@demo.com</code>
-          <p className="auth-demo-hint">
-            Contraseña: {demoMode ? 'cualquier texto' : 'demo1234'}
-          </p>
+          <p className="auth-demo-title">Acceso</p>
+          <p className="auth-demo-hint">Usá tus credenciales registradas en la base de datos.</p>
         </div>
       </div>
     </div>

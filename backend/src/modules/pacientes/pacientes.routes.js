@@ -20,6 +20,13 @@ router.post(
   ctrl.requestReceta
 )
 
+router.post(
+  '/medicos/:id_medico/mensajes',
+  requireAuth,
+  requireRoles('paciente'),
+  ctrl.requestMensaje
+)
+
 router.get(
   '/medicos/:id_medico/tyc',
   requireAuth,

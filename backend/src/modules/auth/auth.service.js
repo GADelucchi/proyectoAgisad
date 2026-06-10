@@ -131,6 +131,17 @@ async function ensureEspecialidadId(conn, especialidadNombre) {
   return newRows[0].id_especialidad
 }
 
+async function getMedicosSchemaFlags(conn) {
+  const [cols] = await conn.execute('SHOW COLUMNS FROM medicos')
+  const fields = new Set(cols.map((c) => c.Field))
+
+  return {
+    hasIdEspecialidad: fields.has('id_especialidad'),
+    hasMatricula: fields.has('matricula'),
+    hasMatriculaProv: fields.has('matricula_prov'),
+  }
+}
+
 async function createBaseUser(conn, { roleName, email, password, username }) {
   const roleId = await findRoleIdByName(roleName)
   if (!roleId) {
@@ -267,28 +278,55 @@ async function registerMedico(input) {
       username: input.username,
     })
 
-    const idEspecialidad = await ensureEspecialidadId(conn, input.especialidad)
-
     const idCiudad = await ensureProvinceAndCityId(conn, input.provincia, input.ciudad)
+    const schema = await getMedicosSchemaFlags(conn)
+    let medicoResult
 
-    const [medicoResult] = await conn.execute(
-      `INSERT INTO medicos (
-        id_usuario, id_especialidad, id_ciudad, matricula, nombre, apellido, telefono, bio, foto_url, acepta_tyc, acepta_tyc_fecha
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
-      [
-        userId,
-        idEspecialidad,
-        idCiudad,
-        input.matricula,
-        input.nombre,
-        input.apellido,
-        input.telefono || null,
-        input.bio || null,
-        input.foto_url || null,
-        input.acepta_tyc ? 1 : 0,
-        input.acepta_tyc ? new Date() : null,
-      ]
-    )
+    if (schema.hasIdEspecialidad && schema.hasMatricula) {
+      const idEspecialidad = await ensureEspecialidadId(conn, input.especialidad)
+
+      ;[medicoResult] = await conn.execute(
+        `INSERT INTO medicos (
+          id_usuario, id_especialidad, id_ciudad, matricula, nombre, apellido, dni, telefono, bio, foto_url, acepta_tyc, acepta_tyc_fecha
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
+        [
+          userId,
+          idEspecialidad,
+          idCiudad,
+          input.matricula,
+          input.nombre,
+          input.apellido,
+          input.dni,
+          input.telefono || null,
+          input.bio || null,
+          input.foto_url || null,
+          input.acepta_tyc ? 1 : 0,
+          input.acepta_tyc ? new Date() : null,
+        ]
+      )
+    } else if (schema.hasMatriculaProv) {
+      ;[medicoResult] = await conn.execute(
+        `INSERT INTO medicos (
+          id_usuario, nombre, apellido, dni, telefono, direccion, id_ciudad, matricula_prov, bio, foto_url, acepta_tyc, acepta_tyc_fecha
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
+        [
+          userId,
+          input.nombre,
+          input.apellido,
+          input.dni,
+          input.telefono || null,
+          input.direccion || null,
+          idCiudad,
+          input.matricula,
+          input.bio || null,
+          input.foto_url || null,
+          input.acepta_tyc ? 1 : 0,
+          input.acepta_tyc ? new Date() : null,
+        ]
+      )
+    } else {
+      throw new HttpError(500, 'Esquema de tabla medicos no soportado')
+    }
 
     await conn.commit()
 

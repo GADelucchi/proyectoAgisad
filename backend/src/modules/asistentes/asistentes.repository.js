@@ -154,6 +154,27 @@ async function insertAsistenteClinica(idAsistente, idClinica) {
   )
 }
 
+async function findAsistenteAccessByUserId(idUsuario) {
+  const rows = await query(
+    `SELECT
+       a.id_asistente,
+       ap.id_medico,
+       ap.agenda,
+       ap.pacientes,
+       ap.mensajes,
+       ap.recetas,
+       ap.configuracion,
+       ap.bloqueado
+     FROM asistentes a
+     INNER JOIN asistente_permisos ap ON ap.id_asistente = a.id_asistente
+     WHERE a.id_usuario = :idUsuario
+     ORDER BY ap.id_medico
+     LIMIT 1`,
+    { idUsuario }
+  )
+  return rows[0] || null
+}
+
 module.exports = {
   listAsistentesByMedico,
   findAsistenteById,
@@ -165,4 +186,5 @@ module.exports = {
   insertAsistenteClinica,
   findAsistenteIdByUserId,
   hasAsistenteAccessToMedico,
+  findAsistenteAccessByUserId,
 }

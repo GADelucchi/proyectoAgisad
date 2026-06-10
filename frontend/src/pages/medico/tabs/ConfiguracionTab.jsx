@@ -1,279 +1,356 @@
-import { useEffect, useState } from 'react'
-import { Plus, Edit2, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Edit2, Plus, Trash2 } from 'lucide-react'
 import Button from '../../../components/ui/Button'
 import { useAuth } from '../../../context/AuthContext'
 import AltaAsistenteForm from '../../../components/forms/AltaAsistenteForm'
 import { authApi } from '../../../services/auth.api'
 import { medicosApi } from '../../../services/medicos.api'
-import { getClinicsByDoctor, setClinicsByDoctor, getAssistantsByDoctor, setAssistantsByDoctor, createAssistantForDoctor } from '../../../mock/demoData'
+import { asistentesApi } from '../../../services/asistentes.api'
 import SmartDateInput from '../../../components/ui/SmartDateInput'
+import SmartTimeInput from '../../../components/ui/SmartTimeInput'
+import { formatTime24h } from '../../../utils/dateFormat'
 import './ConfiguracionTab.css'
 
 const DIAS = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom']
-const TERMINOS_KEY = 'agisad-terms-by-doctor'
-const TERMINOS_PREDETERMINADOS = `Estos términos y condiciones regulan la atención a través de Agisad. La solicitud de turnos, recetas y mensajes no reemplaza una consulta médica de urgencia. Los datos personales serán tratados de forma confidencial según normativa vigente.`
+const TERMINOS_PREDETERMINADOS =
+  'Estos terminos y condiciones regulan la atencion a traves de Agisad. La solicitud de turnos, recetas y mensajes no reemplaza una consulta medica de urgencia. Los datos personales seran tratados de forma confidencial segun normativa vigente.'
 
-function crearRango(id = Date.now()) {
+function mapAsistente(row) {
   return {
-    id,
-    frecuencia: 'semanal',
-    dia: 'Lun',
-    fecha: '',
-    desde: '',
-    hasta: '',
-    dias: ['Lun', 'Mar', 'Mie', 'Jue', 'Vie'],
-    inicio: '09:00',
-    fin: '17:00',
+    id: row.id_asistente,
+    nombre: `${row.nombre || ''} ${row.apellido || ''}`.trim(),
+    usuario: row.username || row.email || '-',
+    estado: row.bloqueado ? 'bloqueada' : 'activa',
+    permisos: {
+      agenda: Boolean(row.agenda),
+      pacientes: Boolean(row.pacientes),
+      mensajes: Boolean(row.mensajes),
+      recetas: Boolean(row.recetas),
+      configuracion: Boolean(row.configuracion),
+      bloqueado: Boolean(row.bloqueado),
+    },
   }
 }
 
-function crearConsultorioVacio() {
+function clinicFormFromRow(row = null) {
+  const first = row?.rangos?.[0]
+  const diasSeleccionados = Array.isArray(row?.rangos)
+    ? DIAS.filter((dia) =>
+        row.rangos.some((r) => {
+          if (Array.isArray(r?.dias) && r.dias.length) return r.dias.includes(dia)
+          return r?.dia === dia
+        })
+      )
+    : []
+  const rangosUnicos = Array.isArray(row?.rangos_unicos)
+    ? row.rangos_unicos.map((r) => ({
+        fecha: r.fecha,
+        inicio: r.inicio,
+        fin: r.fin,
+      }))
+    : []
+  const hasRecurrente = Array.isArray(row?.rangos) && row.rangos.length > 0
+  const modoAgenda = row ? (hasRecurrente ? 'recurrente' : 'unica') : 'recurrente'
+
   return {
-    id: Date.now(),
-    nombre: '',
-    tipo: 'presencial',
-    ciudad: '',
-    direccion: '',
-    rangos: [crearRango()],
+    id: row?.id || null,
+    nombre: row?.nombre || '',
+    tipo: row?.tipo || 'presencial',
+    direccion: row?.direccion || '',
+    dias: diasSeleccionados.length ? diasSeleccionados : ['Lun', 'Mar', 'Mie', 'Jue', 'Vie'],
+    inicio: first?.inicio || '09:00',
+    fin: first?.fin || '17:00',
+    modoAgenda,
+    rangosUnicos,
+    unicoFecha: '',
+    unicoInicio: '09:00',
+    unicoFin: '17:00',
   }
 }
 
-function resumenHorarios(rangos) {
-  if (!rangos || rangos.length === 0) return 'Sin rangos cargados'
-  const primero = rangos[0]
-  if (primero.frecuencia === 'semanal') {
-    const dias = primero.dias?.length ? primero.dias.join(' · ') : primero.dia
-    return `${dias}: ${primero.inicio}-${primero.fin}`
+function bloqueoFormBase(consultorios = []) {
+  return {
+    id: null,
+    id_clinica: consultorios[0]?.id || '',
+    fecha_desde: '',
+    fecha_hasta: '',
+    motivo: '',
   }
-  if (primero.frecuencia === 'unica') {
-    return `Unica vez ${primero.fecha || '--/--/----'}: ${primero.inicio}-${primero.fin}`
-  }
-  const etiqueta = `${primero.desde || '--/--/----'} a ${primero.hasta || '--/--/----'}`
-  return `Rango ${etiqueta}: ${primero.inicio}-${primero.fin}`
 }
 
 export default function ConfiguracionTab() {
-  const { usuario, demoMode } = useAuth()
-  const doctorId = String(usuario?.idUsuario || usuario?.id || 0)
-  const [consultorios, setConsultorios] = useState(() => getClinicsByDoctor(doctorId))
-  const [asistentes, setAsistentes] = useState(() => getAssistantsByDoctor(doctorId))
-  const [duracion, setDuracion]   = useState('30')
+  const { usuario } = useAuth()
+  const doctorId = String(usuario?.idUsuario || usuario?.id || '')
+
+  const [consultorios, setConsultorios] = useState([])
+  const [bloqueos, setBloqueos] = useState([])
+  const [asistentes, setAsistentes] = useState([])
+  const [duracion, setDuracion] = useState('30')
   const [recordatorio, setRecordatorio] = useState('10')
-  const [desdeBloqueo, setDesdeBloqueo] = useState('')
-  const [hastaBloqueo, setHastaBloqueo] = useState('')
-  const [motivoBloqueo, setMotivoBloqueo] = useState('')
-  const [mostrarModal, setMostrarModal] = useState(false)
-  const [editandoId, setEditandoId] = useState(null)
-  const [consultorioDraft, setConsultorioDraft] = useState(crearConsultorioVacio())
   const [terminos, setTerminos] = useState('')
   const [terminosEstado, setTerminosEstado] = useState('')
+  const [estadoCrud, setEstadoCrud] = useState('')
+
+  const [showClinicForm, setShowClinicForm] = useState(false)
+  const [clinicForm, setClinicForm] = useState(clinicFormFromRow())
+
+  const [bloqueoForm, setBloqueoForm] = useState(bloqueoFormBase([]))
+
+  async function loadData() {
+    if (!doctorId) return
+
+    const [clinicasRows, bloqueosRows, asistentesRows, tyc] = await Promise.all([
+      medicosApi.listMyClinicas(),
+      medicosApi.listMyBloqueos(),
+      asistentesApi.listByMedico(doctorId).catch(() => []),
+      medicosApi.getMyTyc().catch(() => null),
+    ])
+
+    const clinics = Array.isArray(clinicasRows) ? clinicasRows : []
+    setConsultorios(clinics)
+    setBloqueos(Array.isArray(bloqueosRows) ? bloqueosRows : [])
+    setAsistentes(Array.isArray(asistentesRows) ? asistentesRows.map(mapAsistente) : [])
+    setTerminos(tyc?.texto || '')
+    setBloqueoForm((prev) => ({
+      ...prev,
+      id_clinica: prev.id_clinica || clinics[0]?.id || '',
+    }))
+  }
 
   useEffect(() => {
-    let cancelled = false
+    loadData().catch(() => {
+      setConsultorios([])
+      setBloqueos([])
+      setAsistentes([])
+      setTerminos('')
+    })
+  }, [doctorId])
 
-    async function loadTerminos() {
-      if (demoMode) {
-        const guardados = JSON.parse(localStorage.getItem(TERMINOS_KEY) || '{}')
-        if (!cancelled) setTerminos(guardados[doctorId] || '')
-        return
-      }
-
-      try {
-        const tyc = await medicosApi.getMyTyc()
-        if (!cancelled) {
-          setTerminos(tyc?.texto || '')
-        }
-      } catch {
-        if (!cancelled) {
-          setTerminos('')
-          setTerminosEstado('No se pudieron cargar los términos desde la DB.')
-        }
-      }
-    }
-
-    loadTerminos()
-
-    return () => {
-      cancelled = true
-    }
-  }, [demoMode, doctorId])
+  async function patchAsistentePermisos(idAsistente, permisos) {
+    await asistentesApi.patchPermisos(idAsistente, doctorId, permisos)
+    setAsistentes((prev) =>
+      prev.map((a) =>
+        a.id === idAsistente
+          ? {
+              ...a,
+              permisos: { ...a.permisos, ...permisos },
+              estado: permisos.bloqueado ? 'bloqueada' : 'activa',
+            }
+          : a
+      )
+    )
+  }
 
   function toggleAsistente(id) {
-    setAsistentes(prev => {
-      const updated = prev.map(a => a.id === id
-        ? { ...a, estado: a.estado === 'activa' ? 'bloqueada' : 'activa' }
-        : a
-      )
-      setAssistantsByDoctor(doctorId, updated)
-      return updated
-    })
+    const asistente = asistentes.find((a) => a.id === id)
+    if (!asistente) return
+    patchAsistentePermisos(id, { bloqueado: !asistente.permisos.bloqueado })
   }
 
   function togglePermisoAsistente(id, permiso) {
-    setAsistentes(prev => {
-      const updated = prev.map(a => {
-        if (a.id !== id) return a
-        const permisos = a.permisos || { agenda: true, pacientes: false }
-        return {
-          ...a,
-          permisos: {
-            ...permisos,
-            [permiso]: !permisos[permiso],
-          },
-        }
-      })
-      setAssistantsByDoctor(doctorId, updated)
-      return updated
-    })
+    const asistente = asistentes.find((a) => a.id === id)
+    if (!asistente) return
+    patchAsistentePermisos(id, { [permiso]: !asistente.permisos[permiso] })
   }
 
   async function crearAsistente(payload) {
-    if (demoMode) {
-      const nuevo = createAssistantForDoctor(doctorId, payload)
-      setAsistentes((prev) => [...prev, nuevo])
-      return nuevo
-    }
-
     const response = await authApi.registerAsistente({
       ...payload,
+      id_medico: Number(doctorId),
       clinic_ids: payload.clinic_ids,
     })
 
-    setAsistentes((prev) => [
-      ...prev,
-      {
-        id: response?.id_asistente || Date.now(),
-        nombre: payload.nombre,
-        usuario: response?.username || payload.username || payload.email.split('@')[0],
-        estado: payload.permisos?.bloqueado ? 'bloqueada' : 'activa',
-        permisos: payload.permisos,
-      },
-    ])
-
+    await loadData()
     return response
   }
 
-  function abrirNuevoConsultorio() {
-    setEditandoId(null)
-    setConsultorioDraft(crearConsultorioVacio())
-    setMostrarModal(true)
+  function openNewClinica() {
+    setClinicForm(clinicFormFromRow())
+    setShowClinicForm(true)
+    setEstadoCrud('')
   }
 
-  function abrirEdicionConsultorio(consultorio) {
-    setEditandoId(consultorio.id)
-    setConsultorioDraft({
-      ...consultorio,
-      rangos: consultorio.rangos.length > 0 ? consultorio.rangos : [crearRango()],
-    })
-    setMostrarModal(true)
+  function openEditClinica(clinica) {
+    setClinicForm(clinicFormFromRow(clinica))
+    setShowClinicForm(true)
+    setEstadoCrud('')
   }
 
-  function cerrarModalConsultorio() {
-    setMostrarModal(false)
-  }
-
-  function actualizarDraft(campo, valor) {
-    setConsultorioDraft(prev => ({ ...prev, [campo]: valor }))
-  }
-
-  function actualizarRango(rangoId, campo, valor) {
-    setConsultorioDraft(prev => ({
-      ...prev,
-      rangos: prev.rangos.map(r => (r.id === rangoId ? { ...r, [campo]: valor } : r)),
-    }))
-  }
-
-  function cambiarFrecuencia(rangoId, frecuencia) {
-    setConsultorioDraft(prev => ({
-      ...prev,
-      rangos: prev.rangos.map(r => {
-        if (r.id !== rangoId) return r
-        if (frecuencia === 'semanal') return { ...r, frecuencia, fecha: '', desde: '', hasta: '', dias: ['Lun', 'Mar', 'Mie', 'Jue', 'Vie'] }
-        if (frecuencia === 'unica') return { ...r, frecuencia, dia: 'Lun', desde: '', hasta: '', dias: [] }
-        return { ...r, frecuencia, dia: 'Lun', fecha: '', dias: ['Lun', 'Mar', 'Mie', 'Jue', 'Vie'] }
-      }),
-    }))
-  }
-
-  function toggleDiaRango(rangoId, dia) {
-    setConsultorioDraft(prev => ({
-      ...prev,
-      rangos: prev.rangos.map(r => {
-        if (r.id !== rangoId) return r
-        const existe = r.dias.includes(dia)
-        const dias = existe ? r.dias.filter(d => d !== dia) : [...r.dias, dia]
-        return { ...r, dias }
-      }),
-    }))
-  }
-
-  function agregarRango() {
-    setConsultorioDraft(prev => ({ ...prev, rangos: [...prev.rangos, crearRango(Date.now() + prev.rangos.length)] }))
-  }
-
-  function quitarRango(rangoId) {
-    setConsultorioDraft(prev => {
-      if (prev.rangos.length <= 1) return prev
-      return { ...prev, rangos: prev.rangos.filter(r => r.id !== rangoId) }
+  function toggleDia(dia) {
+    setClinicForm((prev) => {
+      const exists = prev.dias.includes(dia)
+      const nextDias = exists ? prev.dias.filter((d) => d !== dia) : [...prev.dias, dia]
+      return { ...prev, dias: nextDias }
     })
   }
 
-  function guardarConsultorio() {
-    if (!consultorioDraft.nombre.trim()) return
-    if (consultorioDraft.tipo === 'presencial' && !consultorioDraft.ciudad.trim()) return
+  function addRangoUnico() {
+    if (!clinicForm.unicoFecha || !clinicForm.unicoInicio || !clinicForm.unicoFin) {
+      setEstadoCrud('Completa fecha, hora inicio y hora fin para agregar un horario de unica vez.')
+      return
+    }
+
+    setClinicForm((prev) => ({
+      ...prev,
+      rangosUnicos: [
+        ...prev.rangosUnicos,
+        {
+          fecha: prev.unicoFecha,
+          inicio: prev.unicoInicio,
+          fin: prev.unicoFin,
+        },
+      ],
+      unicoFecha: '',
+    }))
+    setEstadoCrud('')
+  }
+
+  function removeRangoUnico(index) {
+    setClinicForm((prev) => ({
+      ...prev,
+      rangosUnicos: prev.rangosUnicos.filter((_, i) => i !== index),
+    }))
+  }
+
+  async function submitClinica(e) {
+    e.preventDefault()
+    if (!clinicForm.nombre.trim()) {
+      setEstadoCrud('Ingresa nombre de consultorio.')
+      return
+    }
+    const rangosPayload = []
+
+    if (clinicForm.modoAgenda === 'recurrente') {
+      if (clinicForm.inicio && clinicForm.fin && clinicForm.dias.length > 0) {
+        rangosPayload.push({
+          frecuencia: 'semanal',
+          dias: clinicForm.dias,
+          inicio: clinicForm.inicio,
+          fin: clinicForm.fin,
+          duracion: 30,
+        })
+      }
+    } else {
+      for (const r of clinicForm.rangosUnicos) {
+        if (!r.fecha || !r.inicio || !r.fin) continue
+        rangosPayload.push({
+          frecuencia: 'unica',
+          fecha: r.fecha,
+          inicio: r.inicio,
+          fin: r.fin,
+          duracion: 30,
+        })
+      }
+    }
+
+    if (rangosPayload.length === 0) {
+      setEstadoCrud('Define al menos un rango semanal o una fecha de unica vez.')
+      return
+    }
 
     const payload = {
-      ...consultorioDraft,
-      nombre: consultorioDraft.nombre.trim(),
-      ciudad: consultorioDraft.ciudad.trim(),
-      direccion: consultorioDraft.direccion.trim(),
-      rangos: consultorioDraft.rangos,
+      nombre: clinicForm.nombre.trim(),
+      tipo: clinicForm.tipo,
+      direccion: clinicForm.direccion.trim(),
+      rangos: rangosPayload,
     }
 
-    if (editandoId) {
-      setConsultorios(prev => {
-        const updated = prev.map(c => (c.id === editandoId ? payload : c))
-        setClinicsByDoctor(doctorId, updated)
-        return updated
-      })
-    } else {
-      setConsultorios(prev => {
-        const updated = [...prev, payload]
-        setClinicsByDoctor(doctorId, updated)
-        return updated
-      })
+    try {
+      if (clinicForm.id) {
+        await medicosApi.updateMyClinica(clinicForm.id, payload)
+      } else {
+        await medicosApi.createMyClinica(payload)
+      }
+      await loadData()
+      setShowClinicForm(false)
+      setClinicForm(clinicFormFromRow())
+      setEstadoCrud('Consultorio guardado correctamente.')
+    } catch (err) {
+      setEstadoCrud(err?.message || 'No se pudo guardar el consultorio.')
     }
-    cerrarModalConsultorio()
   }
 
-  function eliminarConsultorio(id) {
-    setConsultorios(prev => {
-      const updated = prev.filter(c => c.id !== id)
-      setClinicsByDoctor(doctorId, updated)
-      return updated
+  async function deleteClinica(idClinica) {
+    const ok = window.confirm('Se eliminara el consultorio y su disponibilidad activa. Continuar?')
+    if (!ok) return
+
+    try {
+      await medicosApi.deleteMyClinica(idClinica)
+      await loadData()
+      setEstadoCrud('Consultorio eliminado.')
+    } catch (err) {
+      setEstadoCrud(err?.message || 'No se pudo eliminar el consultorio.')
+    }
+  }
+
+  const consultorioNombreById = useMemo(
+    () => Object.fromEntries(consultorios.map((c) => [String(c.id), c.nombre])),
+    [consultorios]
+  )
+
+  function startEditBloqueo(b) {
+    setBloqueoForm({
+      id: b.id_excepcion,
+      id_clinica: b.id_clinica,
+      fecha_desde: b.fecha,
+      fecha_hasta: b.fecha,
+      motivo: b.motivo || '',
     })
+    setEstadoCrud('')
   }
 
-  async function guardarTerminos() {
-    const texto = terminos.trim()
-    if (!texto) {
-      setTerminosEstado('Ingresá un texto de términos antes de guardar.')
+  function resetBloqueoForm() {
+    setBloqueoForm(bloqueoFormBase(consultorios))
+  }
+
+  async function submitBloqueo(e) {
+    e.preventDefault()
+    if (!bloqueoForm.id_clinica || !bloqueoForm.fecha_desde || !bloqueoForm.fecha_hasta) {
+      setEstadoCrud('Completa consultorio y rango de fechas para el bloqueo.')
       return
     }
 
     try {
-      if (demoMode) {
-        const guardados = JSON.parse(localStorage.getItem(TERMINOS_KEY) || '{}')
-        guardados[doctorId] = texto
-        localStorage.setItem(TERMINOS_KEY, JSON.stringify(guardados))
+      if (bloqueoForm.id) {
+        await medicosApi.updateMyBloqueo(bloqueoForm.id, {
+          id_clinica: Number(bloqueoForm.id_clinica),
+          fecha: bloqueoForm.fecha_desde,
+          motivo: bloqueoForm.motivo,
+        })
       } else {
-        await medicosApi.saveMyTyc(texto)
+        await medicosApi.createMyBloqueo({
+          id_clinica: Number(bloqueoForm.id_clinica),
+          fecha_desde: bloqueoForm.fecha_desde,
+          fecha_hasta: bloqueoForm.fecha_hasta,
+          motivo: bloqueoForm.motivo,
+        })
       }
+      await loadData()
+      resetBloqueoForm()
+      setEstadoCrud('Bloqueo guardado correctamente.')
+    } catch (err) {
+      setEstadoCrud(err?.message || 'No se pudo guardar el bloqueo.')
+    }
+  }
 
-      setTerminosEstado('Términos guardados correctamente.')
+  async function deleteBloqueo(idExcepcion) {
+    try {
+      await medicosApi.deleteMyBloqueo(idExcepcion)
+      await loadData()
+      setEstadoCrud('Bloqueo eliminado.')
+    } catch (err) {
+      setEstadoCrud(err?.message || 'No se pudo eliminar el bloqueo.')
+    }
+  }
+
+  async function guardarTerminos() {
+    const texto = terminos.trim() || TERMINOS_PREDETERMINADOS
+    try {
+      await medicosApi.saveMyTyc(texto)
+      setTerminosEstado('Terminos guardados correctamente.')
       setTimeout(() => setTerminosEstado(''), 2000)
     } catch (err) {
-      setTerminosEstado(err?.message || 'No se pudieron guardar los términos.')
+      setTerminosEstado(err?.message || 'No se pudieron guardar los terminos.')
     }
   }
 
@@ -283,39 +360,144 @@ export default function ConfiguracionTab() {
 
   return (
     <div className="config-tab">
-      {/* Consultorios */}
       <section className="config-section surface-raised">
         <div className="config-section-header">
-          <h3>🏥 Mis consultorios</h3>
-          <Button variant="accent" size="sm" onClick={abrirNuevoConsultorio}><Plus size={14} /> Agregar consultorio</Button>
+          <h3>Mis consultorios</h3>
+          <Button variant="accent" size="sm" onClick={openNewClinica}>
+            <Plus size={14} /> Agregar consultorio
+          </Button>
         </div>
-        <p className="config-section-sub">Agregá, editá o eliminá los lugares donde atendés.</p>
-        {consultorios.map(c => (
+        <p className="config-section-sub">Alta, edicion y baja de consultorios del medico autenticado.</p>
+        {consultorios.length === 0 && <p className="config-bloqueos-vacio">No hay consultorios cargados.</p>}
+        {consultorios.map((c) => (
           <div key={c.id} className="config-consultorio-card">
             <div className="config-consultorio-info">
               <div>
                 <strong>{c.nombre}</strong>
-                <span className={`badge ${c.tipo === 'virtual' ? 'badge-primary' : 'badge-muted'}`} style={{ marginLeft: 8 }}>
-                  {c.tipo === 'virtual' ? '🖥 Virtual' : '🏥 Presencial'}
-                </span>
+                <span className="badge badge-muted" style={{ marginLeft: 8 }}>{c.ciudad || 'Sin ciudad'}</span>
               </div>
-              <p className="config-consultorio-horarios">{resumenHorarios(c.rangos)}</p>
+              <p className="config-consultorio-horarios">{c.direccion || 'Sin direccion'}</p>
             </div>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <Button variant="ghost" size="sm" onClick={() => abrirEdicionConsultorio(c)}><Edit2 size={13} /> Editar</Button>
-              <Button variant="danger" size="sm" onClick={() => eliminarConsultorio(c.id)}><Trash2 size={13} /> Eliminar</Button>
+              <Button variant="ghost" size="sm" onClick={() => openEditClinica(c)}><Edit2 size={13} /> Editar</Button>
+              <Button variant="danger" size="sm" onClick={() => deleteClinica(c.id)}><Trash2 size={13} /> Eliminar</Button>
             </div>
           </div>
         ))}
+
+        {showClinicForm && (
+          <form className="surface" style={{ padding: '1rem', marginTop: '0.9rem' }} onSubmit={submitClinica}>
+            <div className="auth-grid-2">
+              <div className="form-group">
+                <label className="form-label" htmlFor="clinicaNombre">Nombre</label>
+                <input id="clinicaNombre" className="form-input" value={clinicForm.nombre} onChange={(e) => setClinicForm((p) => ({ ...p, nombre: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="clinicaTipo">Tipo</label>
+                <select id="clinicaTipo" className="form-select" value={clinicForm.tipo} onChange={(e) => setClinicForm((p) => ({ ...p, tipo: e.target.value }))}>
+                  <option value="presencial">Presencial</option>
+                  <option value="virtual">Virtual</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="clinicaDireccion">{clinicForm.tipo === 'virtual' ? 'Link' : 'Direccion'}</label>
+              <input id="clinicaDireccion" className="form-input" value={clinicForm.direccion} onChange={(e) => setClinicForm((p) => ({ ...p, direccion: e.target.value }))} />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="modoAgenda">Modalidad de agenda</label>
+              <select id="modoAgenda" className="form-select" value={clinicForm.modoAgenda} onChange={(e) => setClinicForm((p) => ({ ...p, modoAgenda: e.target.value }))}>
+                <option value="recurrente">Recurrente</option>
+                <option value="unica">Unica vez</option>
+              </select>
+            </div>
+
+            {clinicForm.modoAgenda === 'recurrente' && (
+              <>
+                <div className="form-group">
+                  <label className="form-label">Dias de atencion</label>
+                  <div className="config-dias-row">
+                    {DIAS.map((dia) => (
+                      <button
+                        key={dia}
+                        type="button"
+                        className={`config-dia-btn ${clinicForm.dias.includes(dia) ? 'active' : ''}`}
+                        onClick={() => toggleDia(dia)}
+                      >
+                        {dia[0]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="auth-grid-2">
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="horaInicio">Inicio</label>
+                    <SmartTimeInput id="horaInicio" name="horaInicio" value={clinicForm.inicio} onChange={(e) => setClinicForm((p) => ({ ...p, inicio: e.target.value }))} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="horaFin">Fin</label>
+                    <SmartTimeInput id="horaFin" name="horaFin" value={clinicForm.fin} onChange={(e) => setClinicForm((p) => ({ ...p, fin: e.target.value }))} />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {clinicForm.modoAgenda === 'unica' && (
+              <div className="surface" style={{ padding: '0.75rem', marginBottom: '0.75rem' }}>
+                <p className="form-label" style={{ marginBottom: '0.6rem' }}>Horarios de unica vez</p>
+                <div className="auth-grid-2">
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="unicoFecha">Fecha</label>
+                    <input id="unicoFecha" type="date" className="form-input" value={clinicForm.unicoFecha} onChange={(e) => setClinicForm((p) => ({ ...p, unicoFecha: e.target.value }))} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="unicoInicio">Inicio</label>
+                    <SmartTimeInput id="unicoInicio" name="unicoInicio" value={clinicForm.unicoInicio} onChange={(e) => setClinicForm((p) => ({ ...p, unicoInicio: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="auth-grid-2">
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="unicoFin">Fin</label>
+                    <SmartTimeInput id="unicoFin" name="unicoFin" value={clinicForm.unicoFin} onChange={(e) => setClinicForm((p) => ({ ...p, unicoFin: e.target.value }))} />
+                  </div>
+                  <div className="form-group" style={{ display: 'flex', alignItems: 'end' }}>
+                    <Button type="button" variant="secondary" onClick={addRangoUnico}>
+                      <Plus size={14} /> Agregar unica vez
+                    </Button>
+                  </div>
+                </div>
+
+                {clinicForm.rangosUnicos.length > 0 && (
+                  <div style={{ display: 'grid', gap: '0.4rem', marginTop: '0.4rem' }}>
+                    {clinicForm.rangosUnicos.map((r, idx) => (
+                      <div key={`${r.fecha}-${r.inicio}-${idx}`} className="surface" style={{ padding: '0.5rem', display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.86rem' }}>{r.fecha} · {formatTime24h(r.inicio)} - {formatTime24h(r.fin)}</span>
+                        <Button type="button" variant="danger" size="sm" onClick={() => removeRangoUnico(idx)}>
+                          <Trash2 size={12} /> Quitar
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <Button type="button" variant="secondary" onClick={() => setShowClinicForm(false)}>Cancelar</Button>
+              <Button type="submit">Guardar consultorio</Button>
+            </div>
+          </form>
+        )}
       </section>
 
-      {/* Config turnos */}
       <section className="config-section surface-raised">
-        <h3>⚙️ Configuración general de turnos</h3>
+        <h3>Configuracion general de turnos</h3>
         <div className="config-grid-2">
           <div className="form-group">
-            <label className="form-label" htmlFor="duracion">Duración turno estándar</label>
-            <select id="duracion" className="form-select" value={duracion} onChange={e => setDuracion(e.target.value)}>
+            <label className="form-label" htmlFor="duracion">Duracion turno estandar</label>
+            <select id="duracion" className="form-select" value={duracion} onChange={(e) => setDuracion(e.target.value)}>
               <option value="15">15 minutos</option>
               <option value="20">20 minutos</option>
               <option value="30">30 minutos</option>
@@ -325,101 +507,123 @@ export default function ConfiguracionTab() {
           </div>
           <div className="form-group">
             <label className="form-label" htmlFor="recordatorio">Recordatorio</label>
-            <select id="recordatorio" className="form-select" value={recordatorio} onChange={e => setRecordatorio(e.target.value)}>
+            <select id="recordatorio" className="form-select" value={recordatorio} onChange={(e) => setRecordatorio(e.target.value)}>
               <option value="10">10 minutos antes</option>
               <option value="30">30 minutos antes</option>
               <option value="60">1 hora antes</option>
-              <option value="1440">1 día antes</option>
+              <option value="1440">1 dia antes</option>
             </select>
           </div>
         </div>
-        <Button size="sm">Guardar configuración</Button>
+        <Button size="sm" disabled>Guardar configuracion</Button>
       </section>
 
       <section className="config-section surface-raised">
-        <h3>📝 Términos y condiciones</h3>
-        <p className="config-section-sub">Estos términos se mostrarán al paciente antes de solicitar receta o turno.</p>
+        <h3>Terminos y condiciones</h3>
+        <p className="config-section-sub">Estos terminos se mostraran al paciente antes de solicitar receta o turno.</p>
         <div className="form-group">
-          <label className="form-label" htmlFor="terminos">Texto de términos</label>
+          <label className="form-label" htmlFor="terminos">Texto de terminos</label>
           <textarea
             id="terminos"
             className="form-textarea"
             rows={6}
             value={terminos}
-            onChange={e => setTerminos(e.target.value)}
+            onChange={(e) => setTerminos(e.target.value)}
             placeholder={TERMINOS_PREDETERMINADOS}
           />
         </div>
         <div className="config-terms-actions">
           <Button variant="ghost" size="sm" onClick={restaurarPredeterminados}>Usar predeterminados</Button>
-          <Button size="sm" onClick={guardarTerminos}>Guardar términos</Button>
+          <Button size="sm" onClick={guardarTerminos}>Guardar terminos</Button>
         </div>
         {terminosEstado && <p className="config-terms-msg">{terminosEstado}</p>}
       </section>
 
-      {/* Bloqueo de fechas */}
       <section className="config-section surface-raised">
-        <h3>🚫 Bloquear fechas / vacaciones</h3>
-        <div className="config-grid-2">
+        <h3>Bloquear fechas / vacaciones</h3>
+        <form onSubmit={submitBloqueo}>
           <div className="form-group">
-            <label className="form-label" htmlFor="desde">Desde</label>
-            <SmartDateInput id="desde" name="desde" value={desdeBloqueo} onChange={e => setDesdeBloqueo(e.target.value)} />
+            <label className="form-label" htmlFor="consultorioAfectado">Consultorio afectado</label>
+            <select
+              id="consultorioAfectado"
+              className="form-select"
+              value={bloqueoForm.id_clinica}
+              onChange={(e) => setBloqueoForm((p) => ({ ...p, id_clinica: Number(e.target.value) }))}
+            >
+              <option value="">Seleccionar consultorio</option>
+              {consultorios.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          </div>
+          <div className="config-grid-2">
+            <div className="form-group">
+              <label className="form-label" htmlFor="desde">Desde</label>
+              <SmartDateInput id="desde" name="desde" value={bloqueoForm.fecha_desde} onChange={(e) => setBloqueoForm((p) => ({ ...p, fecha_desde: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="hasta">Hasta</label>
+              <SmartDateInput id="hasta" name="hasta" value={bloqueoForm.fecha_hasta} onChange={(e) => setBloqueoForm((p) => ({ ...p, fecha_hasta: e.target.value }))} />
+            </div>
           </div>
           <div className="form-group">
-            <label className="form-label" htmlFor="hasta">Hasta</label>
-            <SmartDateInput id="hasta" name="hasta" value={hastaBloqueo} onChange={e => setHastaBloqueo(e.target.value)} />
+            <label className="form-label" htmlFor="motivo">Motivo (opcional)</label>
+            <input id="motivo" type="text" className="form-input" placeholder="Vacaciones, congreso..." value={bloqueoForm.motivo} onChange={(e) => setBloqueoForm((p) => ({ ...p, motivo: e.target.value }))} />
           </div>
-        </div>
-        <div className="form-group">
-          <label className="form-label" htmlFor="consultorioAfectado">Consultorio afectado</label>
-          <select id="consultorioAfectado" className="form-select">
-            <option>Todos los consultorios</option>
-            {consultorios.map(c => <option key={c.id}>{c.nombre}</option>)}
-          </select>
-        </div>
-        <div className="form-group">
-          <label className="form-label" htmlFor="motivo">Motivo (opcional)</label>
-          <input id="motivo" type="text" className="form-input" placeholder="Vacaciones, congreso..." value={motivoBloqueo} onChange={e => setMotivoBloqueo(e.target.value)} />
-        </div>
-        <Button variant="secondary" size="sm"><Plus size={14} /> Agregar bloqueo</Button>
-        <p className="config-bloqueos-vacio">No hay bloqueos vigentes.</p>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <Button variant="secondary" size="sm" type="submit">
+              <Plus size={14} /> {bloqueoForm.id ? 'Actualizar bloqueo' : 'Agregar bloqueo'}
+            </Button>
+            {bloqueoForm.id && (
+              <Button type="button" variant="ghost" size="sm" onClick={resetBloqueoForm}>Cancelar edicion</Button>
+            )}
+          </div>
+        </form>
+
+        {bloqueos.length === 0 && <p className="config-bloqueos-vacio">No hay bloqueos vigentes.</p>}
+        {bloqueos.length > 0 && (
+          <div style={{ marginTop: '0.75rem', display: 'grid', gap: '0.5rem' }}>
+            {bloqueos.map((b) => (
+              <div key={b.id_excepcion} className="surface" style={{ padding: '0.75rem', display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}>
+                <div>
+                  <strong>{consultorioNombreById[String(b.id_clinica)] || b.clinica_nombre || `Consultorio ${b.id_clinica}`}</strong>
+                  <p style={{ margin: '0.2rem 0 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    {b.fecha} · {b.motivo || 'Sin motivo'}
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  <Button variant="ghost" size="sm" onClick={() => startEditBloqueo(b)}><Edit2 size={13} /> Editar</Button>
+                  <Button variant="danger" size="sm" onClick={() => deleteBloqueo(b.id_excepcion)}><Trash2 size={13} /> Eliminar</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
-      {/* Gestión de asistentes */}
       <section className="config-section surface-raised">
-        <h3>👤 Gestión de asistentes</h3>
-        <p className="config-section-sub">Podés bloquearlos para que no realicen acciones y solo vean la agenda.</p>
-        {asistentes.map(a => (
+        <h3>Gestion de asistentes</h3>
+        <p className="config-section-sub">Permisos y estado gestionados en base de datos.</p>
+        {asistentes.map((a) => (
           <div key={a.id} className="config-asistente-row">
             <div>
               <strong>{a.nombre}</strong>
               <p style={{ margin: '2px 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                Usuario: {a.usuario} · Estado: <span style={{ color: a.estado === 'activa' ? 'var(--success)' : 'var(--error)' }}>{a.estado === 'activa' ? 'Activa' : 'Bloqueada'}</span>
+                Usuario: {a.usuario} · Estado:{' '}
+                <span style={{ color: a.estado === 'activa' ? 'var(--success)' : 'var(--error)' }}>
+                  {a.estado === 'activa' ? 'Activa' : 'Bloqueada'}
+                </span>
               </p>
               <div className="config-asistente-permisos">
                 <label>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(a.permisos?.agenda)}
-                    onChange={() => togglePermisoAsistente(a.id, 'agenda')}
-                  />
+                  <input type="checkbox" checked={Boolean(a.permisos?.agenda)} onChange={() => togglePermisoAsistente(a.id, 'agenda')} />
                   Agenda
                 </label>
                 <label>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(a.permisos?.pacientes)}
-                    onChange={() => togglePermisoAsistente(a.id, 'pacientes')}
-                  />
+                  <input type="checkbox" checked={Boolean(a.permisos?.pacientes)} onChange={() => togglePermisoAsistente(a.id, 'pacientes')} />
                   Pacientes
                 </label>
               </div>
             </div>
-            <Button
-              variant={a.estado === 'activa' ? 'danger' : 'secondary'}
-              size="sm"
-              onClick={() => toggleAsistente(a.id)}
-            >
+            <Button variant={a.estado === 'activa' ? 'danger' : 'secondary'} size="sm" onClick={() => toggleAsistente(a.id)}>
               {a.estado === 'activa' ? 'Bloquear' : 'Desbloquear'}
             </Button>
           </div>
@@ -436,210 +640,7 @@ export default function ConfiguracionTab() {
         />
       </section>
 
-      {/* Cambiar contraseña */}
-      <section className="config-section surface-raised">
-        <h3>🔒 Cambiar contraseña</h3>
-        <div className="form-group">
-          <label className="form-label" htmlFor="passActual">Contraseña actual</label>
-          <input id="passActual" type="password" className="form-input" />
-        </div>
-        <div className="form-group">
-          <label className="form-label" htmlFor="passNueva">Nueva contraseña</label>
-          <input id="passNueva" type="password" className="form-input" />
-        </div>
-        <div className="form-group">
-          <label className="form-label" htmlFor="passConfirmar">Confirmar nueva contraseña</label>
-          <input id="passConfirmar" type="password" className="form-input" />
-        </div>
-        <Button size="sm">Actualizar contraseña</Button>
-      </section>
-
-      {mostrarModal && (
-        <div className="config-modal-backdrop" role="dialog" aria-modal="true">
-          <div className="config-modal surface-raised">
-            <div className="config-modal-header">
-              <h3>{editandoId ? 'Editar consultorio' : 'Agregar consultorio'}</h3>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="consultorioNombre">Nombre del consultorio</label>
-              <input
-                id="consultorioNombre"
-                className="form-input"
-                value={consultorioDraft.nombre}
-                onChange={e => actualizarDraft('nombre', e.target.value)}
-                placeholder="Ej: Caraga"
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Tipo de atención</label>
-              <div className="config-radio-row">
-                <label className="config-radio-option">
-                  <input
-                    type="radio"
-                    name="tipoAtencion"
-                    checked={consultorioDraft.tipo === 'presencial'}
-                    onChange={() => actualizarDraft('tipo', 'presencial')}
-                  />
-                  <span>Presencial</span>
-                </label>
-                <label className="config-radio-option">
-                  <input
-                    type="radio"
-                    name="tipoAtencion"
-                    checked={consultorioDraft.tipo === 'virtual'}
-                    onChange={() => actualizarDraft('tipo', 'virtual')}
-                  />
-                  <span>Virtual (videollamada)</span>
-                </label>
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="consultorioCiudad">Ciudad</label>
-              <input
-                id="consultorioCiudad"
-                className="form-input"
-                value={consultorioDraft.ciudad}
-                onChange={e => actualizarDraft('ciudad', e.target.value)}
-                placeholder="Ej: La Plata"
-                disabled={consultorioDraft.tipo === 'virtual'}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="consultorioDireccion">Direccion</label>
-              <input
-                id="consultorioDireccion"
-                className="form-input"
-                value={consultorioDraft.direccion}
-                onChange={e => actualizarDraft('direccion', e.target.value)}
-                placeholder="Calle y altura"
-                disabled={consultorioDraft.tipo === 'virtual'}
-              />
-            </div>
-
-            <div className="config-rangos-header">
-              <h4>Rangos de atencion</h4>
-              <Button variant="secondary" size="sm" onClick={agregarRango}><Plus size={14} /> Agregar rango</Button>
-            </div>
-
-            <div className="config-rangos-list">
-              {consultorioDraft.rangos.map((rango, index) => (
-                <div key={rango.id} className="config-rango-card">
-                  <div className="form-group">
-                    <label className="form-label" htmlFor={`freq-${rango.id}`}>Frecuencia</label>
-                    <select
-                      id={`freq-${rango.id}`}
-                      className="form-select"
-                      value={rango.frecuencia}
-                      onChange={e => cambiarFrecuencia(rango.id, e.target.value)}
-                    >
-                      <option value="semanal">Semanal</option>
-                      <option value="unica">Unica vez</option>
-                      <option value="rango">Rango</option>
-                    </select>
-                  </div>
-
-                  {rango.frecuencia === 'unica' && (
-                    <div className="form-group">
-                      <label className="form-label" htmlFor={`fecha-${rango.id}`}>Fecha</label>
-                      <SmartDateInput
-                        id={`fecha-${rango.id}`}
-                        name={`fecha-${rango.id}`}
-                        value={rango.fecha}
-                        onChange={e => actualizarRango(rango.id, 'fecha', e.target.value)}
-                      />
-                    </div>
-                  )}
-
-                  {rango.frecuencia === 'rango' && (
-                    <>
-                      <div className="config-grid-2">
-                        <div className="form-group">
-                          <label className="form-label" htmlFor={`desde-${rango.id}`}>Desde</label>
-                          <SmartDateInput
-                            id={`desde-${rango.id}`}
-                            name={`desde-${rango.id}`}
-                            value={rango.desde}
-                            onChange={e => actualizarRango(rango.id, 'desde', e.target.value)}
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label className="form-label" htmlFor={`hasta-${rango.id}`}>Hasta</label>
-                          <SmartDateInput
-                            id={`hasta-${rango.id}`}
-                            name={`hasta-${rango.id}`}
-                            value={rango.hasta}
-                            onChange={e => actualizarRango(rango.id, 'hasta', e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    </>
-                  )}
-
-                  {(rango.frecuencia === 'semanal' || rango.frecuencia === 'rango') && (
-                    <div className="form-group">
-                      <label className="form-label">Días</label>
-                      <div className="config-dias-row">
-                        {DIAS.map(dia => (
-                          <button
-                            key={`${rango.id}-${dia}`}
-                            type="button"
-                            className={`config-dia-btn ${rango.dias.includes(dia) ? 'active' : ''}`}
-                            onClick={() => toggleDiaRango(rango.id, dia)}
-                          >
-                            {dia[0]}
-                          </button>
-                        ))}
-                      </div>
-                      {rango.frecuencia === 'semanal' && (
-                        <small className="config-dia-hint">Se repetirá indefinidamente en los días marcados.</small>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="config-grid-2">
-                    <div className="form-group">
-                      <label className="form-label" htmlFor={`inicio-${rango.id}`}>Inicio</label>
-                      <input
-                        id={`inicio-${rango.id}`}
-                        type="time"
-                        className="form-input"
-                        value={rango.inicio}
-                        onChange={e => actualizarRango(rango.id, 'inicio', e.target.value)}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label" htmlFor={`fin-${rango.id}`}>Fin</label>
-                      <input
-                        id={`fin-${rango.id}`}
-                        type="time"
-                        className="form-input"
-                        value={rango.fin}
-                        onChange={e => actualizarRango(rango.id, 'fin', e.target.value)}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="config-rango-footer">
-                    <Button variant="danger" size="sm" onClick={() => quitarRango(rango.id)} disabled={consultorioDraft.rangos.length === 1}>
-                      Quitar
-                    </Button>
-                    <span>Rango {index + 1}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="config-modal-actions">
-              <Button variant="secondary" onClick={cerrarModalConsultorio}>Cancelar</Button>
-              <Button variant="primary" onClick={guardarConsultorio}>Guardar</Button>
-            </div>
-          </div>
-        </div>
-      )}
+      {estadoCrud && <p className="config-terms-msg">{estadoCrud}</p>}
     </div>
   )
 }

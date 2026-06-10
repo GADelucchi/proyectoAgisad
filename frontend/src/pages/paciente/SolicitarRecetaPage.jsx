@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ChevronLeft, Plus, Trash2 } from 'lucide-react'
 import Button from '../../components/ui/Button'
-import { api, ApiError } from '../../services/apiClient'
+import { ApiError } from '../../services/apiClient'
+import { pacientesApi } from '../../services/pacientes.api'
 import './SolicitarRecetaPage.css'
 
 export default function SolicitarRecetaPage() {
@@ -34,7 +35,7 @@ export default function SolicitarRecetaPage() {
     setError('')
     setLoading(true)
     try {
-      await api.post(`/pacientes/medicos/${medicoId}/recetas`, {
+      await pacientesApi.solicitarReceta(medicoId, {
         tipo,
         items: lista,
       })

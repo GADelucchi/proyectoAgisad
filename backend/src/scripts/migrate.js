@@ -22,6 +22,9 @@ const MIGRATIONS = [
   '005_schema_alignment_y_recetas.sql',
   '006_add_ultimo_login.sql',
   '007_hotfix_tyc_tables.sql',
+  '008_add_mensaje_solicitudes.sql',
+  '009_hotfix_medico_disponibilidad_excepciones.sql',
+  '011_hotfix_clinicas_virtual_link.sql',
 ]
 
 async function ensureLogTable(conn) {

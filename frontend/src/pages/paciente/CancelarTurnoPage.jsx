@@ -2,17 +2,13 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ChevronLeft } from 'lucide-react'
 import Button from '../../components/ui/Button'
-import { useAuth } from '../../context/AuthContext'
 import { turnosApi } from '../../services/turnos.api'
-import { cancelAppointment, getPendingAppointmentsByPatient } from '../../mock/demoData'
 import { formatDateDdMmYyyy, formatTime24h } from '../../utils/dateFormat'
 import './CancelarTurnoPage.css'
 
 export default function CancelarTurnoPage() {
   const { medicoId } = useParams()
   const navigate = useNavigate()
-  const { usuario, demoMode } = useAuth()
-  const patientId = usuario?.idUsuario || usuario?.id || null
 
   const [turnos, setTurnos] = useState([])
   const [seleccionado, setSeleccionado] = useState(null)
@@ -20,20 +16,12 @@ export default function CancelarTurnoPage() {
   const [motivo, setMotivo] = useState('')
   const [error, setError] = useState('')
 
-  // Carga y re-carga los turnos cuando cambia demoData
+  // Carga de turnos activos del paciente desde DB
   useEffect(() => {
     let cancelled = false
 
     async function cargar() {
       try {
-        if (demoMode) {
-          const todos = getPendingAppointmentsByPatient(patientId)
-          if (!cancelled) {
-            setTurnos(todos.filter(t => String(t.doctorId) === String(medicoId)))
-          }
-          return
-        }
-
         const rows = await turnosApi.listarMisTurnos({ idMedico: medicoId })
         if (!cancelled) {
           const activos = rows.filter(t => ['pendiente', 'confirmado', 'en_curso'].includes(t.status))
@@ -49,28 +37,17 @@ export default function CancelarTurnoPage() {
 
     cargar()
 
-    if (demoMode) {
-      window.addEventListener('agisad-demo-data-changed', cargar)
-    }
-
     return () => {
       cancelled = true
-      if (demoMode) {
-        window.removeEventListener('agisad-demo-data-changed', cargar)
-      }
     }
-  }, [patientId, medicoId, demoMode])
+  }, [medicoId])
 
   async function confirmarCancelacion() {
     if (!seleccionado) return
 
     setError('')
     try {
-      if (demoMode) {
-        cancelAppointment(seleccionado.id)
-      } else {
-        await turnosApi.cancelarPropio(seleccionado.id, motivo)
-      }
+      await turnosApi.cancelarPropio(seleccionado.id, motivo)
       setConfirmado(true)
     } catch (err) {
       setError(err?.message || 'No se pudo cancelar el turno.')

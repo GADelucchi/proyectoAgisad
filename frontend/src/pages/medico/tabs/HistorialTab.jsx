@@ -1,46 +1,83 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Search, RefreshCw } from 'lucide-react'
 import Button from '../../../components/ui/Button'
+import { useAuth } from '../../../context/AuthContext'
+import { turnosApi } from '../../../services/turnos.api'
 import './HistorialTab.css'
 
-const EVENTOS_MOCK = [
-  { id: 1, fecha: '13/05/2026, 02:00 p.m.', evento: 'Paciente no asistió', turno: '2026-05-13 14:00', tipo: 'Seguimiento', paciente: 'Gastón Alejo Delucchi', dni: '40568729', consultorio: 'Virtual', solicitadoPor: 'panel_medico', actor: 'Dr. Gustavo A. Delucchi', asistencia: 'no_asistio' },
-  { id: 2, fecha: '13/05/2026, 02:00 p.m.', evento: 'Paciente asistió',    turno: '2026-05-13 09:00', tipo: 'Seguimiento', paciente: 'Gastón Alejo Delucchi', dni: '40568729', consultorio: 'Virtual', solicitadoPor: 'panel_medico', actor: 'Dr. Gustavo A. Delucchi', asistencia: 'asistio' },
-  { id: 3, fecha: '13/05/2026, 01:49 p.m.', evento: 'Turno creado',        turno: '2026-05-13 09:00', tipo: 'Seguimiento', paciente: 'Gastón Alejo Delucchi', dni: '40568729', consultorio: 'Virtual', solicitadoPor: 'panel_medico', actor: 'Dr. Gustavo A. Delucchi', asistencia: null },
-]
-
 const BADGE_EVENTO = {
-  'Paciente asistió':     'badge-success',
-  'Paciente no asistió':  'badge-error',
-  'Turno creado':         'badge-primary',
-  'Turno cancelado':      'badge-warning',
+  asistio: 'badge-success',
+  no_asistio: 'badge-error',
+  cancelado: 'badge-warning',
+  pendiente: 'badge-primary',
+}
+
+function toIsoDate(date) {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function asLabel(estado) {
+  if (estado === 'asistio') return 'Paciente asistio'
+  if (estado === 'no_asistio') return 'Paciente no asistio'
+  if (estado === 'cancelado') return 'Turno cancelado'
+  return 'Turno pendiente'
 }
 
 export default function HistorialTab() {
+  const { usuario } = useAuth()
   const [query, setQuery] = useState('')
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(false)
+  const doctorId = usuario?.idUsuario || usuario?.id
 
-  const filtrados = EVENTOS_MOCK.filter(e =>
-    e.paciente.toLowerCase().includes(query.toLowerCase()) ||
-    e.dni.includes(query)
+  async function load() {
+    if (!doctorId) return
+    setLoading(true)
+    try {
+      const today = new Date()
+      const desde = toIsoDate(new Date(today.getFullYear(), today.getMonth(), 1))
+      const hasta = toIsoDate(new Date(today.getFullYear(), today.getMonth() + 1, 0))
+      const turnos = await turnosApi.listarPorMedico({ idMedico: doctorId, desde, hasta })
+      setRows(Array.isArray(turnos) ? turnos : [])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+  }, [doctorId])
+
+  const filtrados = useMemo(
+    () =>
+      rows.filter((e) =>
+        `${e.paciente_nombre || ''} ${e.paciente_apellido || ''}`.toLowerCase().includes(query.toLowerCase())
+      ),
+    [rows, query]
   )
 
   return (
     <div className="historial-tab">
       <div className="historial-header">
         <div>
-          <h3>📋 Historial de turnos</h3>
-          <p>Registro de creación, cancelación, confirmación y asistencia.</p>
+          <h3>Historial de turnos</h3>
+          <p>Registro de estados sobre turnos en base de datos.</p>
         </div>
-        <Button variant="ghost" size="sm"><RefreshCw size={14} /> Actualizar</Button>
+        <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
+          <RefreshCw size={14} /> {loading ? 'Actualizando...' : 'Actualizar'}
+        </Button>
       </div>
 
       <div className="pacientes-search surface-raised">
         <Search size={16} style={{ color: 'var(--text-muted)' }} />
         <input
           className="buscador-input"
-          placeholder="Buscar por paciente (nombre o DNI)..."
+          placeholder="Buscar por paciente..."
           value={query}
-          onChange={e => setQuery(e.target.value)}
+          onChange={(e) => setQuery(e.target.value)}
         />
       </div>
 
@@ -51,32 +88,21 @@ export default function HistorialTab() {
         <table className="table">
           <thead>
             <tr>
-              <th>Fecha evento</th>
+              <th>Fecha turno</th>
               <th>Evento</th>
-              <th>Tipo</th>
               <th>Paciente</th>
               <th>Consultorio</th>
-              <th>Actor</th>
-              <th>Asistencia</th>
+              <th>Estado</th>
             </tr>
           </thead>
           <tbody>
-            {filtrados.map(e => (
-              <tr key={e.id}>
-                <td style={{ whiteSpace: 'nowrap', fontSize: '0.82rem' }}>{e.fecha}</td>
-                <td><span className={`badge ${BADGE_EVENTO[e.evento] || 'badge-muted'}`}>{e.evento}</span></td>
-                <td>{e.tipo}</td>
-                <td>
-                  <div style={{ fontSize: '0.85rem' }}>{e.paciente}</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>DNI {e.dni}</div>
-                </td>
-                <td>{e.consultorio}</td>
-                <td style={{ fontSize: '0.82rem' }}>{e.actor}</td>
-                <td>
-                  {e.asistencia === 'asistio'    && <span className="badge badge-success">Asistió</span>}
-                  {e.asistencia === 'no_asistio' && <span className="badge badge-error">No asistió</span>}
-                  {e.asistencia === null         && <span className="badge badge-muted">Sin registrar</span>}
-                </td>
+            {filtrados.map((e) => (
+              <tr key={e.id_turno}>
+                <td style={{ whiteSpace: 'nowrap', fontSize: '0.82rem' }}>{`${e.fecha} ${e.hora}`}</td>
+                <td><span className={`badge ${BADGE_EVENTO[e.estado] || 'badge-muted'}`}>{asLabel(e.estado)}</span></td>
+                <td>{`${e.paciente_nombre || ''} ${e.paciente_apellido || ''}`.trim()}</td>
+                <td>{e.id_clinica}</td>
+                <td><span className={`badge ${BADGE_EVENTO[e.estado] || 'badge-muted'}`}>{e.estado}</span></td>
               </tr>
             ))}
           </tbody>

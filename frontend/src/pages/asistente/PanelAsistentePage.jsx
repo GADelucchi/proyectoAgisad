@@ -1,14 +1,36 @@
 import { useAuth } from '../../context/AuthContext'
 import AgendaTab    from '../medico/tabs/AgendaTab'
 import PacientesTab from '../medico/tabs/PacientesTab'
-import { useState } from 'react'
-import { getAssistantAccess } from '../../mock/demoData'
+import { useEffect, useState } from 'react'
+import { asistentesApi } from '../../services/asistentes.api'
 import { formatDateDdMmYyyy } from '../../utils/dateFormat'
 import '../medico/PanelMedicoPage.css'
 
 export default function PanelAsistentePage() {
   const { usuario } = useAuth()
-  const access = getAssistantAccess(usuario?.username)
+  const [access, setAccess] = useState({
+    doctorId: null,
+    blocked: true,
+    permissions: { agenda: true, pacientes: false },
+  })
+
+  useEffect(() => {
+    let cancelled = false
+    asistentesApi
+      .meAccess()
+      .then((data) => {
+        if (!cancelled) setAccess(data)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAccess({ doctorId: null, blocked: true, permissions: { agenda: true, pacientes: false } })
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const tabs = [
     ...(access.permissions.agenda ? [{ id: 'agenda', label: 'Agenda' }] : []),
     ...(access.permissions.pacientes ? [{ id: 'pacientes', label: 'Pacientes' }] : []),
