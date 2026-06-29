@@ -17,6 +17,10 @@ function normalizeHourKey(value) {
   return String(value || '').slice(0, 5)
 }
 
+function normalizeLabel(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
 function getDayOfWeek(dateIso) {
   const date = new Date(`${dateIso}T00:00:00`)
   const jsDay = date.getDay()
@@ -117,10 +121,25 @@ async function ensureTurnosFeatureForUser(idUsuario) {
   })
 }
 
-async function getDisponibilidad({ idMedico, idClinica, fecha }) {
+async function getDisponibilidad({ idMedico, idClinica, fecha, duracionMinutos = null }) {
   if (!idMedico || !idClinica || !fecha) {
     throw new HttpError(400, 'id_medico, id_clinica y fecha son obligatorios')
   }
+
+  const turnosConfig = await medicosRepo.findTurnosConfigByMedico(Number(idMedico))
+  const duracionGeneral = Number(turnosConfig?.config?.duracion_turno_estandar || 0)
+  const duracionDefault = Number.isFinite(duracionGeneral) && duracionGeneral > 0
+    ? duracionGeneral
+    : 30
+  const requestedDuration = Number.isInteger(Number(duracionMinutos)) && Number(duracionMinutos) > 0
+    ? Number(duracionMinutos)
+    : duracionDefault
+  const durationByTypeName = new Map(
+    (Array.isArray(turnosConfig?.tipos) ? turnosConfig.tipos : []).map((tipo) => [
+      normalizeLabel(tipo?.nombre),
+      Number(tipo?.duracion_minutos || 0),
+    ])
+  )
 
   const diaSemana = getDayOfWeek(fecha)
   const franjas = await medicosRepo.findDisponibilidadByMedicoClinicaDia({
@@ -141,7 +160,7 @@ async function getDisponibilidad({ idMedico, idClinica, fecha }) {
       id_disponibilidad: null,
       hora_inicio: e.hora_inicio,
       hora_fin: e.hora_fin,
-      duracion_turno: 30,
+      duracion_turno: duracionDefault,
     })),
   ]
 
@@ -154,7 +173,15 @@ async function getDisponibilidad({ idMedico, idClinica, fecha }) {
   }
 
   const tomadosRows = await medicosRepo.findTurnosTomados({ idMedico, fecha })
-  const tomados = new Set(tomadosRows.map((row) => normalizeHourKey(row.hora)))
+  const ocupados = tomadosRows.map((row) => {
+    const start = toMinutes(normalizeHourKey(row.hora))
+    const fromType = durationByTypeName.get(normalizeLabel(row.motivo_consulta))
+    const duration = Number.isInteger(fromType) && fromType > 0 ? fromType : duracionDefault
+    return {
+      start,
+      end: start + duration,
+    }
+  })
   const bloqueosRows = await medicosRepo.listBloqueosByMedico({ idMedico, idClinica })
   const bloqueosDelDia = bloqueosRows.filter((b) => b.fecha === fecha)
 
@@ -162,16 +189,19 @@ async function getDisponibilidad({ idMedico, idClinica, fecha }) {
   for (const franja of franjasTotales) {
     const inicio = toMinutes(String(franja.hora_inicio).slice(0, 5))
     const fin = toMinutes(String(franja.hora_fin).slice(0, 5))
-    const duracion = Number(franja.duracion_turno) || 30
+    const duracion = duracionDefault
 
     for (let t = inicio; t + duracion <= fin; t += duracion) {
       const hora = toTime(t)
       const bloqueado = isSlotBlocked({ slotHora: hora, bloqueos: bloqueosDelDia })
+      const slotStart = t
+      const slotEnd = t + requestedDuration
+      const overlaps = ocupados.some((o) => slotStart < o.end && o.start < slotEnd)
       slots.push({
         hora,
         id_disponibilidad: franja.id_disponibilidad,
         bloqueado,
-        libre: !tomados.has(normalizeHourKey(hora)) && !bloqueado,
+        libre: !overlaps && !bloqueado,
       })
     }
   }
@@ -201,6 +231,7 @@ async function getMyDisponibilidad({ idClinica, fecha, requesterIdUsuario, reque
     idMedico: Number(medico.id_medico),
     idClinica: Number(idClinica),
     fecha,
+    duracionMinutos: null,
   })
 }
 

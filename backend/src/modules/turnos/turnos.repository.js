@@ -1,5 +1,24 @@
 const { query, pool } = require('../../db/query')
 
+function normalizeLabel(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function toMinutes(value) {
+  const [h, m] = String(value || '').slice(0, 5).split(':').map(Number)
+  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0)
+}
+
+function resolveDuration({ requested, motivo, defaultDuration, byTypeName }) {
+  const requestedNum = Number(requested)
+  if (Number.isInteger(requestedNum) && requestedNum > 0) return requestedNum
+
+  const byMotivo = byTypeName.get(normalizeLabel(motivo))
+  if (Number.isInteger(byMotivo) && byMotivo > 0) return byMotivo
+
+  return defaultDuration
+}
+
 async function insertTurno(data) {
   const sql = `
     INSERT INTO turnos (
@@ -12,6 +31,63 @@ async function insertTurno(data) {
   const conn = await pool.getConnection()
   try {
     await conn.beginTransaction()
+
+    const [configRows] = await conn.execute(
+      `SELECT duracion_turno_estandar
+       FROM medico_turnos_config
+       WHERE id_medico = ?
+       LIMIT 1`,
+      [data.idMedico]
+    )
+    const defaultDuration = Number(configRows[0]?.duracion_turno_estandar || 30) || 30
+
+    const [tiposRows] = await conn.execute(
+      `SELECT nombre, duracion_minutos
+       FROM medico_tipos_turno
+       WHERE id_medico = ?
+         AND activo = 1`,
+      [data.idMedico]
+    )
+    const byTypeName = new Map(
+      (Array.isArray(tiposRows) ? tiposRows : []).map((row) => [normalizeLabel(row.nombre), Number(row.duracion_minutos || 0)])
+    )
+
+    const requestedDuration = resolveDuration({
+      requested: data.duracionMinutos,
+      motivo: data.motivoConsulta,
+      defaultDuration,
+      byTypeName,
+    })
+
+    const [existingRows] = await conn.execute(
+      `SELECT DATE_FORMAT(hora, '%H:%i') AS hora, motivo_consulta
+       FROM turnos
+       WHERE id_medico = ?
+         AND fecha = ?
+         AND estado NOT IN ('cancelado_paciente', 'cancelado_clinica')
+       FOR UPDATE`,
+      [data.idMedico, data.fecha]
+    )
+
+    const start = toMinutes(data.hora)
+    const end = start + requestedDuration
+
+    for (const existing of existingRows) {
+      const existingDuration = resolveDuration({
+        requested: null,
+        motivo: existing.motivo_consulta,
+        defaultDuration,
+        byTypeName,
+      })
+      const existingStart = toMinutes(existing.hora)
+      const existingEnd = existingStart + existingDuration
+      const overlaps = start < existingEnd && existingStart < end
+      if (overlaps) {
+        const err = new Error('El horario seleccionado se superpone con otro turno')
+        err.code = 'TURNO_OVERLAP'
+        throw err
+      }
+    }
 
     const [result] = await conn.execute(sql, data)
     const idTurno = result.insertId

@@ -19,6 +19,7 @@ async function getDisponibilidad(req, res, next) {
       idMedico: Number(req.params.id_medico),
       idClinica: Number(req.query.id_clinica),
       fecha: req.query.fecha,
+      duracionMinutos: req.query.duracion_minutos ? Number(req.query.duracion_minutos) : null,
     })
     res.json(data)
   } catch (err) {

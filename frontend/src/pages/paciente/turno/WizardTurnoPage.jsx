@@ -136,6 +136,7 @@ export default function WizardTurnoPage() {
           idMedico: medicoId,
           idClinica: sel.consultorio.id,
           fecha,
+          duracionMinutos: sel.tipo?.duracion || null,
         })
         if (!cancelled) {
           const rows = Array.isArray(res?.slots) ? res.slots : []
@@ -150,7 +151,7 @@ export default function WizardTurnoPage() {
     return () => {
       cancelled = true
     }
-  }, [medicoId, sel.consultorio, sel.fecha])
+  }, [medicoId, sel.consultorio, sel.fecha, sel.tipo])
 
   useEffect(() => {
     let cancelled = false
@@ -181,6 +182,7 @@ export default function WizardTurnoPage() {
               idMedico: medicoId,
               idClinica: sel.consultorio.id,
               fecha,
+              duracionMinutos: sel.tipo?.duracion || null,
             })
 
             const daySlots = Array.isArray(res?.slots) ? res.slots : []
@@ -209,7 +211,7 @@ export default function WizardTurnoPage() {
     return () => {
       cancelled = true
     }
-  }, [calendarMonth, medicoId, sel.consultorio, today])
+  }, [calendarMonth, medicoId, sel.consultorio, sel.tipo, today])
 
   function avanzar() {
     if (step < STEPS.length - 1) setStep((s) => s + 1)
@@ -237,6 +239,7 @@ export default function WizardTurnoPage() {
         fecha: toIsoDate(sel.fecha),
         hora: sel.horario,
         motivo_consulta: sel.tipo.label,
+        duracion_minutos: Number(sel.tipo.duracion),
       })
       setStep(4)
     } catch (err) {

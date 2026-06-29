@@ -16,11 +16,14 @@ export const medicosApi = {
       : []
   },
   listClinicasByMedico: (idMedico) => api.get(`/medicos/${idMedico}/clinicas`),
-  getDisponibilidad: ({ idMedico, idClinica, fecha }) => {
+  getDisponibilidad: ({ idMedico, idClinica, fecha, duracionMinutos }) => {
     const qs = new URLSearchParams({
       id_clinica: String(idClinica),
       fecha: String(fecha),
     })
+    if (duracionMinutos !== undefined && duracionMinutos !== null) {
+      qs.set('duracion_minutos', String(duracionMinutos))
+    }
     return api.get(`/medicos/${idMedico}/disponibilidad?${qs.toString()}`)
   },
   getTurnosConfigByMedico: (idMedico) => api.get(`/medicos/${idMedico}/turnos-config`),

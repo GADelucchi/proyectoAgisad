@@ -45,6 +45,7 @@ async function crearTurno(input, authUser) {
       fecha: input.fecha,
       hora: input.hora,
       motivoConsulta: input.motivo_consulta || null,
+      duracionMinutos: input.duracion_minutos ? Number(input.duracion_minutos) : null,
       modificadoPor: authUser?.idUsuario || null,
     })
 
@@ -55,6 +56,9 @@ async function crearTurno(input, authUser) {
   } catch (err) {
     if (err && err.code === 'ER_DUP_ENTRY') {
       throw new HttpError(409, 'Ese horario ya fue tomado por otro turno')
+    }
+    if (err && err.code === 'TURNO_OVERLAP') {
+      throw new HttpError(409, 'Ese horario se superpone con otro turno existente')
     }
     throw err
   }
