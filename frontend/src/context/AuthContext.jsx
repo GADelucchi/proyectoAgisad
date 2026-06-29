@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { authApi } from "../services/auth.api";
 import { STORAGE_KEYS } from "../services/apiClient";
 import { normalizeUserForUi } from "../utils/userDisplay";
@@ -15,6 +15,34 @@ export function AuthProvider({ children }) {
       return null;
     }
   });
+
+  useEffect(() => {
+    const token = localStorage.getItem(STORAGE_KEYS.token);
+    if (!token) return;
+
+    let cancelled = false;
+
+    async function refreshCurrentUser() {
+      try {
+        const user = await authApi.me();
+        if (cancelled) return;
+        const normalized = normalizeUserForUi(user);
+        setUsuario(normalized);
+        localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(normalized));
+      } catch {
+        if (cancelled) return;
+        setUsuario(null);
+        localStorage.removeItem(STORAGE_KEYS.user);
+        localStorage.removeItem(STORAGE_KEYS.token);
+      }
+    }
+
+    refreshCurrentUser();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function login(email, password) {
     console.info("[AuthContext.login] intento", { email });

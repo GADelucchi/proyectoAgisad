@@ -9,6 +9,15 @@ async function login(req, res, next) {
   }
 }
 
+async function me(req, res, next) {
+  try {
+    const payload = await authService.getCurrentUser(req.user.idUsuario)
+    res.json(payload)
+  } catch (err) {
+    next(err)
+  }
+}
+
 async function registerPaciente(req, res, next) {
   try {
     const payload = await authService.registerPaciente(req.body)
@@ -38,6 +47,7 @@ async function registerGerente(req, res, next) {
 
 module.exports = {
   login,
+  me,
   registerPaciente,
   registerMedico,
   registerGerente,

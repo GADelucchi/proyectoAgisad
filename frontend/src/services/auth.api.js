@@ -2,6 +2,7 @@ import { api } from './apiClient'
 
 export const authApi = {
   login: (email, password) => api.post('/auth/login', { email, password }),
+  me: () => api.get('/auth/me'),
   register: (data) => api.post('/auth/register/paciente', data),
   registerPaciente: (data) => api.post('/auth/register/paciente', data),
   registerMedico: (data) => api.post('/auth/register/medico', data),

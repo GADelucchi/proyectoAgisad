@@ -5,6 +5,7 @@ const HttpError = require('../../utils/httpError')
 const { pool } = require('../../db/query')
 const {
   findUserByEmail,
+  findUserById,
   findRoleIdByName,
   existsUsername,
   updateUltimoLogin,
@@ -364,6 +365,15 @@ async function login({ email, password }) {
   }
 }
 
+async function getCurrentUser(idUsuario) {
+  const user = await findUserById(Number(idUsuario))
+  if (!user || !user.activo) {
+    throw new HttpError(401, 'Usuario no autorizado')
+  }
+
+  return buildUserPayload(user)
+}
+
 async function registerPaciente(input) {
   const required = ['email', 'password', 'dni', 'nombre', 'apellido']
   for (const field of required) {
@@ -599,6 +609,7 @@ async function registerGerente(input) {
 
 module.exports = {
   login,
+  getCurrentUser,
   registerPaciente,
   registerMedico,
   registerGerente,
