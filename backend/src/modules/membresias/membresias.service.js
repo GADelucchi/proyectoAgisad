@@ -38,13 +38,13 @@ async function getCurrentMembershipByUserId(idUsuario) {
       m.pagado_hasta,
       m.monto_mensual,
       m.auto_renueva,
-      COALESCE(mp.id_plan, mp_fallback.id_plan) AS plan_id_resuelto,
-      COALESCE(mp.codigo, mp_fallback.codigo, m.plan) AS plan_codigo,
-      COALESCE(mp.nombre, mp_fallback.nombre, m.plan) AS plan_nombre,
-      COALESCE(mp.vigencia_meses, mp_fallback.vigencia_meses, 1) AS vigencia_meses,
-      COALESCE(mp.permite_turnos, mp_fallback.permite_turnos, 1) AS permite_turnos,
-      COALESCE(mp.permite_asistentes, mp_fallback.permite_asistentes, 1) AS permite_asistentes,
-      COALESCE(mp.limite_asistentes, mp_fallback.limite_asistentes) AS limite_asistentes,
+      COALESCE(mp_fallback.id_plan, mp.id_plan) AS plan_id_resuelto,
+      COALESCE(mp_fallback.codigo, mp.codigo, m.plan) AS plan_codigo,
+      COALESCE(mp_fallback.nombre, mp.nombre, m.plan) AS plan_nombre,
+      COALESCE(mp_fallback.vigencia_meses, mp.vigencia_meses, 1) AS vigencia_meses,
+      COALESCE(mp_fallback.permite_turnos, mp.permite_turnos, 1) AS permite_turnos,
+      COALESCE(mp_fallback.permite_asistentes, mp.permite_asistentes, 1) AS permite_asistentes,
+      COALESCE(mp_fallback.limite_asistentes, mp.limite_asistentes) AS limite_asistentes,
       CASE
         WHEN m.estado = 'activa' AND (m.pagado_hasta IS NULL OR m.pagado_hasta >= CURDATE()) THEN 1
         ELSE 0

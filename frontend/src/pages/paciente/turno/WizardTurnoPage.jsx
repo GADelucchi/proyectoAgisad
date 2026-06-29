@@ -7,7 +7,7 @@ import { turnosApi } from '../../../services/turnos.api'
 import { formatDateDdMmYyyy, formatTime24h } from '../../../utils/dateFormat'
 import './WizardTurnoPage.css'
 
-const TIPOS_CONSULTA = [
+const TIPOS_CONSULTA_POR_DEFECTO = [
   { id: 'seguimiento', label: 'Seguimiento', duracion: 30 },
   { id: 'primera', label: 'Primera vez', duracion: 60 },
 ]
@@ -76,15 +76,17 @@ export default function WizardTurnoPage() {
   const [loadingMonth, setLoadingMonth] = useState(false)
   const [sel, setSel] = useState({ consultorio: null, tipo: null, fecha: null, horario: null, idDisponibilidad: null })
   const [permiteTurnos, setPermiteTurnos] = useState(true)
+  const [tiposConsulta, setTiposConsulta] = useState(TIPOS_CONSULTA_POR_DEFECTO)
 
   useEffect(() => {
     let cancelled = false
 
     async function loadInitial() {
       try {
-        const [medicosRows, clinicasRows] = await Promise.all([
+        const [medicosRows, clinicasRows, turnosConfig] = await Promise.all([
           medicosApi.list(''),
           medicosApi.listClinicasByMedico(medicoId),
+          medicosApi.getTurnosConfigByMedico(medicoId).catch(() => null),
         ])
 
         if (cancelled) return
@@ -94,10 +96,21 @@ export default function WizardTurnoPage() {
           setPermiteTurnos(found.permiteTurnos !== false)
         }
         setConsultorios(Array.isArray(clinicasRows) ? clinicasRows : [])
+        const tipos = Array.isArray(turnosConfig?.tipos_turno)
+          ? turnosConfig.tipos_turno
+              .map((tipo, index) => ({
+                id: tipo?.id_tipo_turno || `tipo-${index}`,
+                label: String(tipo?.nombre || '').trim(),
+                duracion: Number(tipo?.duracion_minutos || 0),
+              }))
+              .filter((tipo) => tipo.label && tipo.duracion > 0)
+          : []
+        setTiposConsulta(tipos.length > 0 ? tipos : TIPOS_CONSULTA_POR_DEFECTO)
       } catch {
         if (!cancelled) {
           setConsultorios([])
           setPermiteTurnos(true)
+          setTiposConsulta(TIPOS_CONSULTA_POR_DEFECTO)
         }
       }
     }
@@ -258,7 +271,7 @@ export default function WizardTurnoPage() {
       <div>
         <h2 className="wizard-step-title"><span className="wizard-step-num">2</span> Tipo de consulta</h2>
         <div className="wizard-cards wizard-cards-2">
-          {TIPOS_CONSULTA.map((t) => (
+          {tiposConsulta.map((t) => (
             <button
               key={t.id}
               className={`wizard-option-card wizard-option-card-lg ${sel.tipo?.id === t.id ? 'selected' : ''}`}

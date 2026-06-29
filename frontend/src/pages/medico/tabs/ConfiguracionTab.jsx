@@ -109,6 +109,7 @@ export default function ConfiguracionTab({ permiteTurnos = true }) {
   const [terminos, setTerminos] = useState('')
   const [terminosEstado, setTerminosEstado] = useState('')
   const [estadoCrud, setEstadoCrud] = useState('')
+  const [guardandoClinica, setGuardandoClinica] = useState(false)
   const [enviarRecetasMail, setEnviarRecetasMail] = useState(true)
   const [estadoMailConfig, setEstadoMailConfig] = useState('')
 
@@ -262,6 +263,9 @@ export default function ConfiguracionTab({ permiteTurnos = true }) {
 
   async function submitClinica(e) {
     e.preventDefault()
+    setEstadoCrud('')
+
+    if (guardandoClinica) return
     if (!clinicForm.nombre.trim()) {
       setEstadoCrud('Ingresa nombre de consultorio.')
       return
@@ -304,17 +308,24 @@ export default function ConfiguracionTab({ permiteTurnos = true }) {
     }
 
     try {
+      setGuardandoClinica(true)
       if (clinicForm.id) {
         await medicosApi.updateMyClinica(clinicForm.id, payload)
       } else {
         await medicosApi.createMyClinica(payload)
       }
-      await loadData()
+
+      // Refrescamos solo clinicas para evitar que un fallo en otro modulo invalide el alta.
+      const clinicasRows = await medicosApi.listMyClinicas()
+      setConsultorios(Array.isArray(clinicasRows) ? clinicasRows : [])
+
       setShowClinicForm(false)
       setClinicForm(clinicFormFromRow())
       setEstadoCrud('Consultorio guardado correctamente.')
     } catch (err) {
       setEstadoCrud(err?.message || 'No se pudo guardar el consultorio.')
+    } finally {
+      setGuardandoClinica(false)
     }
   }
 
@@ -500,6 +511,7 @@ export default function ConfiguracionTab({ permiteTurnos = true }) {
           </Button>
         </div>
         <p className="config-section-sub">Alta, edicion y baja de consultorios del medico autenticado.</p>
+        {estadoCrud && <p className="config-terms-msg">{estadoCrud}</p>}
         {consultorios.length === 0 && <p className="config-bloqueos-vacio">No hay consultorios cargados.</p>}
         {consultorios.map((c) => (
           <div key={c.id} className="config-consultorio-card">
@@ -618,7 +630,9 @@ export default function ConfiguracionTab({ permiteTurnos = true }) {
 
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <Button type="button" variant="secondary" onClick={() => setShowClinicForm(false)}>Cancelar</Button>
-              <Button type="submit">Guardar consultorio</Button>
+              <Button type="submit" disabled={guardandoClinica}>
+                {guardandoClinica ? 'Guardando...' : 'Guardar consultorio'}
+              </Button>
             </div>
           </form>
         )}
@@ -812,8 +826,6 @@ export default function ConfiguracionTab({ permiteTurnos = true }) {
           />
         )}
       </section>
-
-      {estadoCrud && <p className="config-terms-msg">{estadoCrud}</p>}
     </div>
   )
 }

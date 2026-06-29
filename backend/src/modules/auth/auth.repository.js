@@ -11,7 +11,7 @@ async function findUserByEmail(email) {
        u.activo,
        r.nombre AS rol,
        ms.id_membresia,
-       ms.plan AS plan_codigo,
+      COALESCE(mp_fallback.codigo, mp.codigo, ms.plan) AS plan_codigo,
        ms.estado AS membresia_estado,
        ms.pagado_hasta AS membresia_pagado_hasta,
        CASE
@@ -19,10 +19,10 @@ async function findUserByEmail(email) {
          WHEN ms.estado = 'activa' AND (ms.pagado_hasta IS NULL OR ms.pagado_hasta >= CURDATE()) THEN 1
          ELSE 0
        END AS membresia_activa_vigente,
-       COALESCE(mp.nombre, ms.plan) AS plan_nombre,
-       COALESCE(mp.permite_turnos, 1) AS permite_turnos,
-       COALESCE(mp.permite_asistentes, 1) AS permite_asistentes,
-       mp.limite_asistentes,
+      COALESCE(mp_fallback.nombre, mp.nombre, ms.plan) AS plan_nombre,
+      COALESCE(mp_fallback.permite_turnos, mp.permite_turnos, 1) AS permite_turnos,
+      COALESCE(mp_fallback.permite_asistentes, mp.permite_asistentes, 1) AS permite_asistentes,
+      COALESCE(mp_fallback.limite_asistentes, mp.limite_asistentes) AS limite_asistentes,
        COALESCE(
          CONCAT(p.nombre, ' ', p.apellido),
          CONCAT(m.nombre, ' ', m.apellido),
@@ -46,7 +46,9 @@ async function findUserByEmail(email) {
        ) latest ON latest.id_membresia = m1.id_membresia
      ) ms ON ms.id_usuario = u.id_usuario
      LEFT JOIN membresia_planes mp
-       ON mp.id_plan = ms.id_plan OR LOWER(mp.codigo) = LOWER(ms.plan)
+       ON mp.id_plan = ms.id_plan
+     LEFT JOIN membresia_planes mp_fallback
+       ON LOWER(mp_fallback.codigo) = LOWER(ms.plan)
      WHERE u.email = :email
      LIMIT 1`,
     { email }
@@ -65,7 +67,7 @@ async function findUserById(idUsuario) {
        u.activo,
        r.nombre AS rol,
        ms.id_membresia,
-       ms.plan AS plan_codigo,
+      COALESCE(mp_fallback.codigo, mp.codigo, ms.plan) AS plan_codigo,
        ms.estado AS membresia_estado,
        ms.pagado_hasta AS membresia_pagado_hasta,
        CASE
@@ -73,10 +75,10 @@ async function findUserById(idUsuario) {
          WHEN ms.estado = 'activa' AND (ms.pagado_hasta IS NULL OR ms.pagado_hasta >= CURDATE()) THEN 1
          ELSE 0
        END AS membresia_activa_vigente,
-       COALESCE(mp.nombre, ms.plan) AS plan_nombre,
-       COALESCE(mp.permite_turnos, 1) AS permite_turnos,
-       COALESCE(mp.permite_asistentes, 1) AS permite_asistentes,
-       mp.limite_asistentes,
+      COALESCE(mp_fallback.nombre, mp.nombre, ms.plan) AS plan_nombre,
+      COALESCE(mp_fallback.permite_turnos, mp.permite_turnos, 1) AS permite_turnos,
+      COALESCE(mp_fallback.permite_asistentes, mp.permite_asistentes, 1) AS permite_asistentes,
+      COALESCE(mp_fallback.limite_asistentes, mp.limite_asistentes) AS limite_asistentes,
        COALESCE(
          CONCAT(p.nombre, ' ', p.apellido),
          CONCAT(m.nombre, ' ', m.apellido),
@@ -100,7 +102,9 @@ async function findUserById(idUsuario) {
        ) latest ON latest.id_membresia = m1.id_membresia
      ) ms ON ms.id_usuario = u.id_usuario
      LEFT JOIN membresia_planes mp
-       ON mp.id_plan = ms.id_plan OR LOWER(mp.codigo) = LOWER(ms.plan)
+       ON mp.id_plan = ms.id_plan
+     LEFT JOIN membresia_planes mp_fallback
+       ON LOWER(mp_fallback.codigo) = LOWER(ms.plan)
      WHERE u.id_usuario = :idUsuario
      LIMIT 1`,
     { idUsuario }
