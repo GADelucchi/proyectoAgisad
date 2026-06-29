@@ -1,4 +1,11 @@
-const { query } = require('../../db/query')
+const { query, pool } = require('../../db/query')
+
+function normalizePlanCode(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+}
 
 function mapSuscripcionFilter(filter) {
   if (!filter) return null
@@ -354,6 +361,205 @@ async function listFinanzasMovimientos({ limit = 100 }) {
   )
 }
 
+async function findUserSubscriptionByEmail(email) {
+  const rows = await query(`
+    SELECT 
+      u.email,
+      u.username,
+      r.nombre AS rol,
+      m.id_membresia,
+      m.plan,
+      m.estado,
+      m.fecha_inicio,
+      m.fecha_fin,
+      m.monto_mensual,
+      m.pagado_hasta,
+      m.auto_renueva,
+      m.creado_en
+    FROM usuarios u
+    INNER JOIN roles r ON r.id_rol = u.id_rol
+    LEFT JOIN membresias m ON u.id_usuario = m.id_usuario
+    WHERE u.email = :email
+    ORDER BY m.creado_en DESC
+    LIMIT 1
+  `, { email })
+  
+  return rows[0] || { error: 'Usuario no encontrado' }
+}
+
+async function reactivateMembershipByUser({
+  idUsuario,
+  rawPlan,
+  metodo,
+  referenciaExterna,
+  monto,
+}) {
+  const conn = await pool.getConnection()
+
+  try {
+    await conn.beginTransaction()
+
+    const [latestRows] = await conn.execute(
+      `SELECT
+         m.id_membresia,
+         m.id_plan,
+         m.plan,
+         m.estado,
+         m.pagado_hasta,
+         m.monto_mensual
+       FROM membresias m
+       WHERE m.id_usuario = ?
+       ORDER BY m.id_membresia DESC
+       LIMIT 1
+       FOR UPDATE`,
+      [idUsuario]
+    )
+
+    const latest = latestRows[0] || null
+    const requestedPlanCode = normalizePlanCode(rawPlan)
+
+    let resolvedPlan = null
+    if (requestedPlanCode) {
+      const [planRows] = await conn.execute(
+        `SELECT id_plan, codigo, nombre, vigencia_meses, precio_mensual
+         FROM membresia_planes
+         WHERE LOWER(codigo) = ? OR LOWER(nombre) = ?
+         LIMIT 1`,
+        [requestedPlanCode, requestedPlanCode]
+      )
+      resolvedPlan = planRows[0] || null
+    }
+
+    if (!resolvedPlan && latest?.id_plan) {
+      const [planRows] = await conn.execute(
+        `SELECT id_plan, codigo, nombre, vigencia_meses, precio_mensual
+         FROM membresia_planes
+         WHERE id_plan = ?
+         LIMIT 1`,
+        [latest.id_plan]
+      )
+      resolvedPlan = planRows[0] || null
+    }
+
+    if (!resolvedPlan && latest?.plan) {
+      const legacyCode = normalizePlanCode(latest.plan)
+      const [planRows] = await conn.execute(
+        `SELECT id_plan, codigo, nombre, vigencia_meses, precio_mensual
+         FROM membresia_planes
+         WHERE LOWER(codigo) = ? OR LOWER(nombre) = ?
+         LIMIT 1`,
+        [legacyCode, legacyCode]
+      )
+      resolvedPlan = planRows[0] || null
+    }
+
+    if (!resolvedPlan) {
+      throw new Error('No se pudo resolver un plan de membresia para el usuario')
+    }
+
+    const vigenciaMeses = Math.max(1, Number(resolvedPlan.vigencia_meses || 1))
+    const montoFinal =
+      monto === null || monto === undefined
+        ? (resolvedPlan.precio_mensual ?? latest?.monto_mensual ?? null)
+        : Number(monto)
+
+    let idMembresia = latest?.id_membresia || null
+
+    if (!idMembresia) {
+      const [insertMembership] = await conn.execute(
+        `INSERT INTO membresias (
+           id_usuario,
+           id_plan,
+           plan,
+           estado,
+           fecha_inicio,
+           fecha_fin,
+           monto_mensual,
+           pagado_hasta,
+           auto_renueva
+         ) VALUES (
+           ?, ?, ?, 'activa', CURDATE(), DATE_ADD(CURDATE(), INTERVAL ? MONTH), ?, DATE_ADD(CURDATE(), INTERVAL ? MONTH), 0
+         )`,
+        [idUsuario, resolvedPlan.id_plan, resolvedPlan.codigo, vigenciaMeses, montoFinal, vigenciaMeses]
+      )
+      idMembresia = insertMembership.insertId
+    } else {
+      await conn.execute(
+        `UPDATE membresias
+         SET
+           id_plan = ?,
+           plan = ?,
+           estado = 'activa',
+           monto_mensual = ?,
+           fecha_inicio = CASE
+             WHEN estado = 'activa' AND pagado_hasta IS NOT NULL AND pagado_hasta >= CURDATE()
+               THEN fecha_inicio
+             ELSE CURDATE()
+           END,
+           pagado_hasta = DATE_ADD(
+             CASE
+               WHEN estado = 'activa' AND pagado_hasta IS NOT NULL AND pagado_hasta >= CURDATE()
+                 THEN pagado_hasta
+               ELSE CURDATE()
+             END,
+             INTERVAL ? MONTH
+           ),
+           fecha_fin = DATE_ADD(
+             CASE
+               WHEN estado = 'activa' AND pagado_hasta IS NOT NULL AND pagado_hasta >= CURDATE()
+                 THEN pagado_hasta
+               ELSE CURDATE()
+             END,
+             INTERVAL ? MONTH
+           )
+         WHERE id_membresia = ?`,
+        [resolvedPlan.id_plan, resolvedPlan.codigo, montoFinal, vigenciaMeses, vigenciaMeses, idMembresia]
+      )
+    }
+
+    if (montoFinal !== null && montoFinal !== undefined) {
+      await conn.execute(
+        `INSERT INTO pagos_membresia (
+           id_membresia,
+           monto,
+           moneda,
+           metodo,
+           estado,
+           referencia_externa,
+           fecha_pago
+         ) VALUES (?, ?, 'ARS', ?, 'aprobado', ?, NOW())`,
+        [idMembresia, Number(montoFinal), metodo, referenciaExterna || null]
+      )
+    }
+
+    const [updatedRows] = await conn.execute(
+      `SELECT
+         m.id_membresia,
+         m.id_usuario,
+         m.plan,
+         m.estado,
+         DATE_FORMAT(m.fecha_inicio, '%d/%m/%Y') AS fecha_inicio,
+         DATE_FORMAT(m.fecha_fin, '%d/%m/%Y') AS fecha_fin,
+         DATE_FORMAT(m.pagado_hasta, '%d/%m/%Y') AS pagado_hasta,
+         m.monto_mensual,
+         mp.nombre AS plan_nombre
+       FROM membresias m
+       LEFT JOIN membresia_planes mp ON mp.id_plan = m.id_plan
+       WHERE m.id_membresia = ?
+       LIMIT 1`,
+      [idMembresia]
+    )
+
+    await conn.commit()
+    return updatedRows[0] || null
+  } catch (err) {
+    await conn.rollback()
+    throw err
+  } finally {
+    conn.release()
+  }
+}
+
 module.exports = {
   listUsuariosAdmin,
   findUsuarioBaseById,
@@ -368,4 +574,6 @@ module.exports = {
   getFinanzasResumen,
   listFinanzasMensual,
   listFinanzasMovimientos,
+  findUserSubscriptionByEmail,
+  reactivateMembershipByUser,
 }

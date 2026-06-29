@@ -42,7 +42,7 @@ const FEATURES = [
 
 const PLANS = [
   {
-    name: "Starter",
+    name: "Inicial",
     amount: "29.999",
     period: "/mes",
     desc: "Para profesionales independientes que recién arrancan",
@@ -51,21 +51,22 @@ const PLANS = [
     items: [
       { ok: true, text: "Solicitud de recetas" },
       { ok: true, text: "Verificación OTP" },
+      { ok: false, text: "Módulo de turnos" },
       { ok: false, text: "Creación de clínicas" },
       { ok: false, text: "Solicitud de turnos automatizada" },
       { ok: false, text: "Recordatorios automáticos" },
-      { ok: false, text: "Cancelación online" },
+      { ok: false, text: "Gestión de asistentes" },
     ],
   },
   {
-    name: "Medium",
+    name: "Medio",
     amount: "49.999",
     period: "/mes",
     desc: "Para quienes necesitan automatizaciones completas sin complicaciones",
     cta: "Probar 30 días gratis",
     featured: true,
     items: [
-      { ok: true, text: "Plan Starter" },
+      { ok: true, text: "Plan Inicial" },
       { ok: true, text: "Hasta 2 clínicas" },
       { ok: true, text: "Hasta 350 turnos automáticos / mes" },
       { ok: true, text: "Recordatorios automáticos" },
@@ -74,14 +75,14 @@ const PLANS = [
     ],
   },
   {
-    name: "Professional",
+    name: "Profesional",
     amount: "74.999",
     period: "/mes",
     desc: "Para profesionales y clínicas que necesitan más funcionalidades",
     cta: "Probar 30 días gratis",
     featured: false,
     items: [
-      { ok: true, text: "Plan Starter" },
+      { ok: true, text: "Plan Inicial" },
       { ok: true, text: "Turnos ilimitados" },
       { ok: true, text: "Hasta 5 clínicas" },
       { ok: true, text: "Hasta 2 asistentes" },

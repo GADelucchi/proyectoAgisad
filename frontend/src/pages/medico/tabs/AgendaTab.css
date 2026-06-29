@@ -36,24 +36,21 @@
   text-align: center;
 }
 
-.agenda-vista-toggle {
-  display: flex;
+.agenda-vista-label {
+  padding: 0.35rem 0.85rem;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
-.vista-btn {
-  padding: 0.35rem 0.85rem;
-  background: var(--surface-raised);
-  border: none;
-  font-size: 0.85rem;
-  font-weight: 600;
+.agenda-mensaje-accion {
+  margin-top: 0.8rem;
+  font-size: 0.86rem;
   color: var(--text-secondary);
-  cursor: pointer;
-  transition: background var(--transition), color var(--transition);
 }
-.vista-btn.active { background: var(--primary); color: #fff; }
 
 /* Columnas */
 .agenda-columnas {
@@ -98,6 +95,8 @@
 }
 .agenda-slot:last-child { border-bottom: none; }
 .agenda-slot.ocupado { background: var(--surface); }
+.agenda-slot.libre { background: color-mix(in oklab, var(--success-light) 55%, transparent); }
+.agenda-slot.bloqueado { background: color-mix(in oklab, var(--warning-light) 55%, transparent); }
 
 .agenda-slot-hora {
   font-size: 0.88rem;
@@ -130,6 +129,7 @@
 .agenda-accion-btn.asistio    { border-color: var(--success); color: var(--success); background: var(--success-light); }
 .agenda-accion-btn.no-asistio { border-color: var(--error);   color: var(--error);   background: var(--error-light); }
 .agenda-accion-btn.cancelar   { border-color: var(--border);  color: var(--text-muted); background: transparent; }
+.agenda-accion-btn.bloquear   { border-color: var(--warning); color: var(--warning); background: var(--warning-light); }
 
 .agenda-slot-libre {
   display: flex;
@@ -139,193 +139,21 @@
   justify-content: space-between;
 }
 
-.agenda-agendar-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
-  font-size: 0.78rem;
-  font-weight: 700;
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: opacity var(--transition);
-}
-.agenda-agendar-btn:hover { opacity: 0.85; }
-
-.agenda-semana-wrap { display: flex; flex-direction: column; gap: 0.75rem; }
-
-.agenda-semana-header {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(160px, 1fr));
-  gap: 0.75rem;
-  padding: 0.75rem;
-  overflow-x: auto;
-  position: sticky;
-  top: 68px;
-  z-index: 2;
-}
-
-.agenda-semana-dia-head {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  align-items: center;
-  justify-content: center;
-  text-transform: capitalize;
-  font-size: 0.82rem;
-  color: var(--text-muted);
-  padding: 0.25rem 0;
-}
-
-.agenda-semana-totals {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 0.3rem;
-  margin-top: 0.2rem;
-}
-
-.agenda-total-pill {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  padding: 2px 8px;
-  font-size: 0.7rem;
-  font-weight: 700;
-  line-height: 1.2;
-}
-
-.agenda-total-pill.ocupado {
-  color: var(--error);
-  background: var(--error-light);
-  border: 1px solid color-mix(in oklab, var(--error) 35%, transparent);
-}
-
-.agenda-total-pill.libre {
-  color: var(--success);
-  background: var(--success-light);
-  border: 1px solid color-mix(in oklab, var(--success) 35%, transparent);
-}
-
-.agenda-semana-grid {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(160px, 1fr));
-  gap: 0.75rem;
-  overflow-x: auto;
-  padding-bottom: 0.25rem;
-}
-
-.agenda-semana-col {
-  min-height: 420px;
-  padding: 0.75rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.agenda-semana-col-head {
-  position: sticky;
-  top: 126px;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--border);
-  background: inherit;
-}
-
-.agenda-semana-col-head .agenda-semana-totals {
-  justify-content: flex-start;
-}
-
-.agenda-semana-day-name {
-  text-transform: capitalize;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-
-.agenda-week-consultorio {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 0.75rem;
-  background: var(--bg-base);
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-}
-
-.agenda-week-consultorio-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.agenda-week-consultorio-free {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.agenda-week-empty {
-  padding: 0.6rem 0.75rem;
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--text-muted);
-  font-size: 0.82rem;
-  text-align: center;
-}
-
-.agenda-week-turnos {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-}
-
-.agenda-week-turno-item {
-  display: flex;
-  gap: 0.5rem;
-  align-items: flex-start;
-  padding: 0.55rem 0.65rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-raised);
-}
-
-.agenda-week-turno-hora {
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--text-secondary);
-  min-width: 46px;
-}
-
-.agenda-week-turno-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-.agenda-week-turno-paciente {
+.agenda-slot-libre-texto {
   font-size: 0.84rem;
-  color: var(--text-primary);
   font-weight: 600;
+  color: var(--text-secondary);
 }
 
 @media (max-width: 1100px) {
-  .agenda-semana-header,
-  .agenda-semana-grid {
-    grid-template-columns: repeat(7, minmax(140px, 1fr));
-  }
 }
 
 @media (max-width: 760px) {
-  .agenda-semana-header,
-  .agenda-semana-grid {
-    grid-template-columns: repeat(7, minmax(120px, 1fr));
+  .agenda-controls {
+    align-items: flex-start;
+  }
+
+  .agenda-fecha-label {
+    min-width: 0;
   }
 }

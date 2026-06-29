@@ -29,6 +29,23 @@ async function listarPorMedico(req, res, next) {
       idMedico: req.query.id_medico,
       desde: req.query.desde,
       hasta: req.query.hasta,
+      requesterIdUsuario: req.user?.idUsuario,
+      requesterRol: req.user?.rol,
+    })
+    res.json(payload)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function listarHistorialPorMedico(req, res, next) {
+  try {
+    const payload = await turnosService.listarHistorialPorMedico({
+      idMedico: req.query.id_medico,
+      desde: req.query.desde,
+      hasta: req.query.hasta,
+      requesterIdUsuario: req.user?.idUsuario,
+      requesterRol: req.user?.rol,
     })
     res.json(payload)
   } catch (err) {
@@ -67,6 +84,7 @@ module.exports = {
   crearTurno,
   cambiarEstado,
   listarPorMedico,
+  listarHistorialPorMedico,
   listarMisTurnos,
   cancelarPropio,
 }

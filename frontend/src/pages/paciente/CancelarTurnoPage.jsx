@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { ChevronLeft } from 'lucide-react'
 import Button from '../../components/ui/Button'
 import { turnosApi } from '../../services/turnos.api'
+import { medicosApi } from '../../services/medicos.api'
 import { formatDateDdMmYyyy, formatTime24h } from '../../utils/dateFormat'
 import './CancelarTurnoPage.css'
 
@@ -22,6 +23,16 @@ export default function CancelarTurnoPage() {
 
     async function cargar() {
       try {
+        const medicosRows = await medicosApi.list('')
+        const medico = (Array.isArray(medicosRows) ? medicosRows : []).find((m) => String(m.id) === String(medicoId))
+        if (medico && medico.permiteTurnos === false) {
+          if (!cancelled) {
+            setError('Este médico tiene plan Inicial, por lo que no tiene módulo de turnos habilitado.')
+            setTurnos([])
+          }
+          return
+        }
+
         const rows = await turnosApi.listarMisTurnos({ idMedico: medicoId })
         if (!cancelled) {
           const activos = rows.filter(t => ['pendiente', 'confirmado', 'en_curso'].includes(t.status))

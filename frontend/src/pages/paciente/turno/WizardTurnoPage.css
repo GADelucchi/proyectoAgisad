@@ -317,11 +317,26 @@
 }
 .wizard-horario-btn:hover { background: var(--primary-light); border-color: var(--primary); }
 .wizard-horario-btn.selected { background: var(--primary); color: #fff; border-color: var(--primary); }
+.wizard-horario-btn.bloqueado,
 .wizard-horario-btn.ocupado {
   background: var(--surface-elevated);
   border-color: var(--border);
   color: var(--text-muted);
   cursor: not-allowed;
+}
+
+.wizard-horario-btn.bloqueado .wizard-horario-texto,
+.wizard-horario-btn.ocupado .wizard-horario-texto {
+  text-decoration: line-through;
+}
+
+.wizard-horario-btn.bloqueado {
+  opacity: 0.72;
+}
+
+.wizard-horario-btn:disabled:hover {
+  background: var(--surface-elevated);
+  border-color: var(--border);
 }
 
 @media (max-width: 900px) {

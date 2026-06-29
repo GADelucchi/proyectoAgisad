@@ -124,8 +124,54 @@ async function getFinanzas() {
   }
 }
 
+async function getUserSubscription(email) {
+  return adminRepository.findUserSubscriptionByEmail(email)
+}
+
+async function reactivateMembership(input) {
+  const idUsuario = toNumber(input?.id_usuario)
+  if (!idUsuario) {
+    throw new HttpError(400, 'id_usuario invalido')
+  }
+
+  const allowedMethods = new Set(['manual', 'transferencia', 'tarjeta', 'mercadopago', 'otro'])
+  const metodo = String(input?.metodo || 'manual').toLowerCase()
+  if (!allowedMethods.has(metodo)) {
+    throw new HttpError(400, 'metodo de pago invalido')
+  }
+
+  const monto = input?.monto === null || input?.monto === undefined || input?.monto === ''
+    ? null
+    : Number(input.monto)
+
+  if (monto !== null && (!Number.isFinite(monto) || monto < 0)) {
+    throw new HttpError(400, 'monto invalido')
+  }
+
+  try {
+    const updated = await adminRepository.reactivateMembershipByUser({
+      idUsuario,
+      rawPlan: input?.plan || null,
+      metodo,
+      referenciaExterna: input?.referencia_externa || null,
+      monto,
+    })
+
+    if (!updated) {
+      throw new HttpError(500, 'No se pudo actualizar la membresia')
+    }
+
+    return updated
+  } catch (err) {
+    if (err instanceof HttpError) throw err
+    throw new HttpError(400, err.message || 'No se pudo reactivar la membresia')
+  }
+}
+
 module.exports = {
   listUsuarios,
   getUsuarioDetalle,
   getFinanzas,
+  getUserSubscription,
+  reactivateMembership,
 }

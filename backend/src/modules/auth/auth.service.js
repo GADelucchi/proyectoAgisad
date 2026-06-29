@@ -9,6 +9,7 @@ const {
   existsUsername,
   updateUltimoLogin,
 } = require('./auth.repository')
+const { normalizePlanCode } = require('../membresias/membresias.service')
 
 function buildTokenPayload(user) {
   return {
@@ -18,6 +19,26 @@ function buildTokenPayload(user) {
     username: user.username,
     email: user.email,
     nombre: user.nombre,
+  }
+}
+
+function buildUserPayload(user) {
+  return {
+    ...buildTokenPayload(user),
+    membresia: {
+      id_membresia: user.id_membresia || null,
+      plan_codigo: user.plan_codigo || null,
+      plan_nombre: user.plan_nombre || null,
+      estado: user.membresia_estado || null,
+      pagado_hasta: user.membresia_pagado_hasta || null,
+      activa_vigente: Boolean(user.membresia_activa_vigente),
+      permite_turnos: Boolean(user.permite_turnos),
+      permite_asistentes: Boolean(user.permite_asistentes),
+      limite_asistentes:
+        user.limite_asistentes === null || user.limite_asistentes === undefined
+          ? null
+          : Number(user.limite_asistentes),
+    },
   }
 }
 
@@ -142,6 +163,155 @@ async function getMedicosSchemaFlags(conn) {
   }
 }
 
+async function tableExists(conn, tableName) {
+  const [rows] = await conn.execute(
+    `SELECT COUNT(*) AS total
+     FROM information_schema.tables
+     WHERE table_schema = DATABASE()
+       AND table_name = ?`,
+    [tableName]
+  )
+  return Number(rows[0]?.total || 0) > 0
+}
+
+async function columnExists(conn, tableName, columnName) {
+  const [rows] = await conn.execute(
+    `SELECT COUNT(*) AS total
+     FROM information_schema.columns
+     WHERE table_schema = DATABASE()
+       AND table_name = ?
+       AND column_name = ?`,
+    [tableName, columnName]
+  )
+  return Number(rows[0]?.total || 0) > 0
+}
+
+async function resolveOrCreatePlan(conn, rawPlanName) {
+  const planName = normalizeText(rawPlanName)
+  if (!planName) return { idPlan: null, code: null }
+
+  const hasPlanCatalog = await tableExists(conn, 'membresia_planes')
+  const planCode = normalizePlanCode(planName) || planName.toLowerCase()
+
+  if (!hasPlanCatalog) {
+    return { idPlan: null, code: planCode }
+  }
+
+  const [existing] = await conn.execute(
+    `SELECT id_plan, codigo
+     FROM membresia_planes
+     WHERE codigo = ? OR LOWER(nombre) = LOWER(?)
+     LIMIT 1`,
+    [planCode, planName]
+  )
+
+  if (existing[0]?.id_plan) {
+    return {
+      idPlan: existing[0].id_plan,
+      code: existing[0].codigo || planCode,
+    }
+  }
+
+  try {
+    const [inserted] = await conn.execute(
+      `INSERT INTO membresia_planes (codigo, nombre, descripcion, activo)
+       VALUES (?, ?, ?, 1)`,
+      [planCode, planName, `Plan ${planName}`]
+    )
+
+    return { idPlan: inserted.insertId, code: planCode }
+  } catch (err) {
+    if (err?.code !== 'ER_DUP_ENTRY') throw err
+
+    const [retry] = await conn.execute(
+      `SELECT id_plan, codigo
+       FROM membresia_planes
+       WHERE codigo = ?
+       LIMIT 1`,
+      [planCode]
+    )
+
+    return {
+      idPlan: retry[0]?.id_plan || null,
+      code: retry[0]?.codigo || planCode,
+    }
+  }
+}
+
+async function createMembershipForUser(conn, { userId, plan }) {
+  const requestedPlan = normalizeText(plan)
+  if (!requestedPlan) return
+
+  const hasMembershipTable = await tableExists(conn, 'membresias')
+  if (!hasMembershipTable) return
+
+  const hasPlanIdInMembership = await columnExists(conn, 'membresias', 'id_plan')
+  const resolvedPlan = await resolveOrCreatePlan(conn, requestedPlan)
+  const planCode = resolvedPlan.code || normalizePlanCode(requestedPlan) || requestedPlan
+  const [planCatalogRows] = await conn.execute(
+    `SELECT id_plan, vigencia_meses, precio_mensual
+     FROM membresia_planes
+     WHERE id_plan = ? OR codigo = ?
+     ORDER BY id_plan = ? DESC
+     LIMIT 1`,
+    [resolvedPlan.idPlan || 0, planCode, resolvedPlan.idPlan || 0]
+  )
+
+  const planCatalog = planCatalogRows[0] || null
+  const vigenciaMeses = Number(planCatalog?.vigencia_meses || 1)
+  const precioMensual =
+    planCatalog?.precio_mensual === null || planCatalog?.precio_mensual === undefined
+      ? null
+      : Number(planCatalog.precio_mensual)
+
+  try {
+    if (hasPlanIdInMembership && resolvedPlan.idPlan) {
+      await conn.execute(
+        `INSERT INTO membresias (
+          id_usuario,
+          id_plan,
+          plan,
+          estado,
+          fecha_inicio,
+          fecha_fin,
+          monto_mensual,
+          pagado_hasta,
+          auto_renueva
+        ) VALUES (?, ?, ?, 'activa', CURDATE(), DATE_ADD(CURDATE(), INTERVAL ? MONTH), ?, DATE_ADD(CURDATE(), INTERVAL ? MONTH), 0)`,
+        [userId, resolvedPlan.idPlan, planCode, vigenciaMeses, precioMensual, vigenciaMeses]
+      )
+      return
+    }
+
+    await conn.execute(
+      `INSERT INTO membresias (
+        id_usuario,
+        plan,
+        estado,
+        fecha_inicio,
+        fecha_fin,
+        monto_mensual,
+        pagado_hasta,
+        auto_renueva
+      ) VALUES (?, ?, 'activa', CURDATE(), DATE_ADD(CURDATE(), INTERVAL ? MONTH), ?, DATE_ADD(CURDATE(), INTERVAL ? MONTH), 0)`,
+      [userId, planCode, vigenciaMeses, precioMensual, vigenciaMeses]
+    )
+  } catch (err) {
+    if (err?.code !== 'ER_BAD_FIELD_ERROR') throw err
+
+    await conn.execute(
+      `INSERT INTO membresias (
+        id_usuario,
+        plan,
+        estado,
+        fecha_inicio,
+        auto_renueva
+      ) VALUES (?, ?, 'activa', CURDATE(), 0)`,
+      [userId, planCode]
+    )
+  }
+}
+
 async function createBaseUser(conn, { roleName, email, password, username }) {
   const roleId = await findRoleIdByName(roleName)
   if (!roleId) {
@@ -190,7 +360,7 @@ async function login({ email, password }) {
 
   return {
     token,
-    user: buildTokenPayload(user),
+    user: buildUserPayload(user),
   }
 }
 
@@ -328,6 +498,11 @@ async function registerMedico(input) {
       throw new HttpError(500, 'Esquema de tabla medicos no soportado')
     }
 
+    await createMembershipForUser(conn, {
+      userId,
+      plan: input.plan,
+    })
+
     await conn.commit()
 
     return {
@@ -391,6 +566,11 @@ async function registerGerente(input) {
        VALUES (?, ?)`,
       [gerenteResult.insertId, clinicaResult.insertId]
     )
+
+    await createMembershipForUser(conn, {
+      userId,
+      plan: input.plan,
+    })
 
     await conn.commit()
 

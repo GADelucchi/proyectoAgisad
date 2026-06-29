@@ -5,6 +5,8 @@ import './PanelAdminPage.css'
 
 const ROLES = ['', 'admin', 'paciente', 'medico', 'asistente', 'gerente']
 const SUSCRIPCIONES = ['', 'activa', 'cancelada', 'vencida', 'inexistente']
+const PLAN_OPTIONS = ['', 'inicial', 'medio', 'profesional', 'empresarial']
+const PAYMENT_METHODS = ['manual', 'transferencia', 'tarjeta', 'mercadopago', 'otro']
 
 function formatMoney(value) {
   const num = Number(value || 0)
@@ -44,6 +46,13 @@ export default function PanelAdminPage() {
   const [loadingUsuarios, setLoadingUsuarios] = useState(false)
   const [loadingDetalle, setLoadingDetalle] = useState(false)
   const [loadingFinanzas, setLoadingFinanzas] = useState(false)
+  const [reactivating, setReactivating] = useState(false)
+  const [reactivateForm, setReactivateForm] = useState({
+    plan: '',
+    metodo: 'manual',
+    monto: '',
+    referencia_externa: '',
+  })
   const [error, setError] = useState('')
 
   async function loadUsuarios() {
@@ -109,6 +118,13 @@ export default function PanelAdminPage() {
   }, [selectedId])
 
   useEffect(() => {
+    setReactivateForm((prev) => ({
+      ...prev,
+      plan: String(detalle?.suscripcion?.plan || '').toLowerCase(),
+    }))
+  }, [detalle?.suscripcion?.plan])
+
+  useEffect(() => {
     if (tab === 'finanzas') {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       loadFinanzas()
@@ -128,6 +144,28 @@ export default function PanelAdminPage() {
       { label: 'Clínicas vinculadas', value: String(clinicas), icon: Building2, hint: 'Del usuario seleccionado' },
     ]
   }, [usuarios, detalle])
+
+  async function handleReactivateMembership() {
+    if (!detalle?.usuario?.id_usuario) return
+
+    setReactivating(true)
+    setError('')
+    try {
+      await adminApi.reactivateMembership({
+        id_usuario: detalle.usuario.id_usuario,
+        plan: reactivateForm.plan || null,
+        metodo: reactivateForm.metodo,
+        monto: reactivateForm.monto === '' ? null : Number(reactivateForm.monto),
+        referencia_externa: reactivateForm.referencia_externa || null,
+      })
+
+      await Promise.all([loadDetalle(detalle.usuario.id_usuario), loadUsuarios()])
+    } catch (err) {
+      setError(err?.message || 'No se pudo reactivar la membresía.')
+    } finally {
+      setReactivating(false)
+    }
+  }
 
   return (
     <div className="admin-dashboard">
@@ -238,6 +276,74 @@ export default function PanelAdminPage() {
                   <KeyValue label="Pagado hasta" value={detalle.suscripcion.pagado_hasta} />
                   <KeyValue label="Monto mensual" value={detalle.suscripcion.monto_mensual ? formatMoney(detalle.suscripcion.monto_mensual) : '—'} />
                 </div>
+
+                {['medico', 'gerente'].includes(detalle.usuario.rol) && (
+                  <div className="surface" style={{ padding: '1rem', marginTop: '0.75rem' }}>
+                    <h4 style={{ marginTop: 0, marginBottom: '0.65rem' }}>Validar pago y reactivar membresía</h4>
+                    <div className="admin-kv-grid" style={{ marginBottom: '0.75rem' }}>
+                      <div className="form-group">
+                        <label className="form-label" htmlFor="reactivarPlan">Plan</label>
+                        <select
+                          id="reactivarPlan"
+                          className="form-select"
+                          value={reactivateForm.plan}
+                          onChange={(e) => setReactivateForm((prev) => ({ ...prev, plan: e.target.value }))}
+                        >
+                          {PLAN_OPTIONS.map((plan) => (
+                            <option key={plan || 'actual'} value={plan}>{plan || 'Mantener plan actual'}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label" htmlFor="reactivarMetodo">Método</label>
+                        <select
+                          id="reactivarMetodo"
+                          className="form-select"
+                          value={reactivateForm.metodo}
+                          onChange={(e) => setReactivateForm((prev) => ({ ...prev, metodo: e.target.value }))}
+                        >
+                          {PAYMENT_METHODS.map((method) => (
+                            <option key={method} value={method}>{method}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label" htmlFor="reactivarMonto">Monto (opcional)</label>
+                        <input
+                          id="reactivarMonto"
+                          className="form-input"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={reactivateForm.monto}
+                          onChange={(e) => setReactivateForm((prev) => ({ ...prev, monto: e.target.value }))}
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label" htmlFor="reactivarRef">Referencia (opcional)</label>
+                        <input
+                          id="reactivarRef"
+                          className="form-input"
+                          type="text"
+                          value={reactivateForm.referencia_externa}
+                          onChange={(e) => setReactivateForm((prev) => ({ ...prev, referencia_externa: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      className="btn btn-md btn-primary"
+                      type="button"
+                      disabled={reactivating}
+                      onClick={handleReactivateMembership}
+                    >
+                      {reactivating ? 'Procesando...' : 'Validar pago y reactivar (30 días)'}
+                    </button>
+                  </div>
+                )}
 
                 <h3>Perfil</h3>
                 <div className="admin-kv-grid">

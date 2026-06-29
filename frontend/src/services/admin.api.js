@@ -11,4 +11,5 @@ export const adminApi = {
   },
   getUsuarioDetalle: (idUsuario) => api.get(`/admin/usuarios/${idUsuario}`),
   getFinanzas: () => api.get('/admin/finanzas'),
+  reactivateMembership: (payload) => api.post('/admin/membresias/reactivar', payload),
 }

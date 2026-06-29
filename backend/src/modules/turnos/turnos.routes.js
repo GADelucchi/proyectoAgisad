@@ -5,6 +5,7 @@ const { requireAuth, requireRoles } = require('../../middlewares/auth.middleware
 const router = Router()
 
 router.get('/mis', requireAuth, requireRoles('paciente'), turnosController.listarMisTurnos)
+router.get('/historial', requireAuth, requireRoles('medico', 'asistente', 'admin', 'gerente'), turnosController.listarHistorialPorMedico)
 router.get('/', requireAuth, requireRoles('medico', 'asistente', 'admin', 'gerente'), turnosController.listarPorMedico)
 router.post('/', requireAuth, requireRoles('paciente', 'asistente', 'medico', 'admin'), turnosController.crearTurno)
 router.patch('/:id_turno/cancelar', requireAuth, requireRoles('paciente'), turnosController.cancelarPropio)

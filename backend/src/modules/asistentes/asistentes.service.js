@@ -14,6 +14,7 @@ const {
   findAsistenteIdByUserId,
   findAsistenteAccessByUserId,
 } = require('./asistentes.repository')
+const { assertUserFeatureByUserId, assertMedicoFeatureByMedicoId } = require('../membresias/membresias.service')
 
 function normalizeText(value) {
   return typeof value === 'string' ? value.trim() : ''
@@ -46,6 +47,12 @@ async function listAsistentes({ idMedico, requesterIdUsuario, requesterRol }) {
   const target = Number(idMedico)
   if (!target) throw new HttpError(400, 'Se requiere id_medico como parámetro')
 
+  await assertMedicoFeatureByMedicoId({
+    idMedico: target,
+    feature: 'permite_asistentes',
+    denyMessage: 'Tu plan actual no permite gestionar asistentes',
+  })
+
   if (requesterRol === 'medico') {
     const medicoPropio = await findMedicoIdByUserId(requesterIdUsuario)
     if (!medicoPropio || Number(medicoPropio) !== target) {
@@ -72,6 +79,12 @@ async function getAsistente({ idAsistente, requesterIdUsuario, requesterRol }) {
 async function patchPermisos({ idAsistente, idMedico, permisos, requesterIdUsuario, requesterRol }) {
   const target = Number(idMedico)
   if (!target) throw new HttpError(400, 'id_medico es obligatorio')
+
+  await assertMedicoFeatureByMedicoId({
+    idMedico: target,
+    feature: 'permite_asistentes',
+    denyMessage: 'Tu plan actual no permite gestionar asistentes',
+  })
 
   if (requesterRol === 'medico') {
     const medicoPropio = await findMedicoIdByUserId(requesterIdUsuario)
@@ -127,6 +140,15 @@ async function createAsistente(input, requester) {
     )
 
     const requesterRole = requester?.rol || 'medico'
+
+    if (requesterRole === 'medico' || requesterRole === 'gerente') {
+      await assertUserFeatureByUserId({
+        idUsuario: requester.idUsuario,
+        feature: 'permite_asistentes',
+        denyMessage: 'Tu plan actual no permite gestionar asistentes',
+      })
+    }
+
     let clinicIds = Array.isArray(input.clinic_ids) ? input.clinic_ids : []
     clinicIds = clinicIds.map((id) => Number(id)).filter(Boolean)
 

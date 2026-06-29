@@ -1,5 +1,6 @@
 const HttpError = require('../../utils/httpError')
 const medicosRepo = require('./medicos.repository')
+const { assertUserFeatureByUserId } = require('../membresias/membresias.service')
 
 function toMinutes(value) {
   const [h, m] = String(value).split(':').map(Number)
@@ -10,6 +11,10 @@ function toTime(minutes) {
   const h = String(Math.floor(minutes / 60)).padStart(2, '0')
   const m = String(minutes % 60).padStart(2, '0')
   return `${h}:${m}:00`
+}
+
+function normalizeHourKey(value) {
+  return String(value || '').slice(0, 5)
 }
 
 function getDayOfWeek(dateIso) {
@@ -104,6 +109,14 @@ async function listMedicos(filters) {
   return medicosRepo.listMedicos(filters)
 }
 
+async function ensureTurnosFeatureForUser(idUsuario) {
+  await assertUserFeatureByUserId({
+    idUsuario,
+    feature: 'permite_turnos',
+    denyMessage: 'Tu plan actual no incluye el modulo de turnos',
+  })
+}
+
 async function getDisponibilidad({ idMedico, idClinica, fecha }) {
   if (!idMedico || !idClinica || !fecha) {
     throw new HttpError(400, 'id_medico, id_clinica y fecha son obligatorios')
@@ -141,7 +154,7 @@ async function getDisponibilidad({ idMedico, idClinica, fecha }) {
   }
 
   const tomadosRows = await medicosRepo.findTurnosTomados({ idMedico, fecha })
-  const tomados = new Set(tomadosRows.map(r => String(r.hora).slice(0, 8)))
+  const tomados = new Set(tomadosRows.map((row) => normalizeHourKey(row.hora)))
   const bloqueosRows = await medicosRepo.listBloqueosByMedico({ idMedico, idClinica })
   const bloqueosDelDia = bloqueosRows.filter((b) => b.fecha === fecha)
 
@@ -158,7 +171,7 @@ async function getDisponibilidad({ idMedico, idClinica, fecha }) {
         hora,
         id_disponibilidad: franja.id_disponibilidad,
         bloqueado,
-        libre: !tomados.has(hora) && !bloqueado,
+        libre: !tomados.has(normalizeHourKey(hora)) && !bloqueado,
       })
     }
   }
@@ -168,6 +181,75 @@ async function getDisponibilidad({ idMedico, idClinica, fecha }) {
     dia_semana: diaSemana,
     slots,
   }
+}
+
+async function getMyDisponibilidad({ idClinica, fecha, requesterIdUsuario, requesterRol }) {
+  const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+  await ensureTurnosFeatureForUser(requesterIdUsuario)
+
+  if (!idClinica || !fecha) {
+    throw new HttpError(400, 'id_clinica y fecha son obligatorios')
+  }
+
+  const allowed = await medicosRepo.ensureMedicoHasClinica({
+    idMedico: Number(medico.id_medico),
+    idClinica: Number(idClinica),
+  })
+  if (!allowed) throw new HttpError(403, 'El consultorio no pertenece al medico autenticado')
+
+  return getDisponibilidad({
+    idMedico: Number(medico.id_medico),
+    idClinica: Number(idClinica),
+    fecha,
+  })
+}
+
+async function getTurnosConfigByMedico({ idMedico }) {
+  if (!idMedico) {
+    throw new HttpError(400, 'id_medico es obligatorio')
+  }
+
+  const result = await medicosRepo.findTurnosConfigByMedico(Number(idMedico))
+  return {
+    duracion_turno_estandar: Number(result?.config?.duracion_turno_estandar || 30),
+    tipos_turno: Array.isArray(result?.tipos) ? result.tipos : [],
+  }
+}
+
+async function getMyTurnosConfig({ requesterIdUsuario, requesterRol }) {
+  const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+  await ensureTurnosFeatureForUser(requesterIdUsuario)
+  return getTurnosConfigByMedico({ idMedico: Number(medico.id_medico) })
+}
+
+async function saveMyTurnosConfig({ input, requesterIdUsuario, requesterRol }) {
+  const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+  await ensureTurnosFeatureForUser(requesterIdUsuario)
+
+  const duracionTurnoEstandar = Number(input?.duracion_turno_estandar || 30)
+  if (!Number.isInteger(duracionTurnoEstandar) || duracionTurnoEstandar <= 0) {
+    throw new HttpError(400, 'duracion_turno_estandar invalida')
+  }
+
+  const tiposRaw = Array.isArray(input?.tipos_turno) ? input.tipos_turno : []
+  const tiposTurno = tiposRaw
+    .map((tipo) => ({
+      nombre: String(tipo?.nombre || '').trim(),
+      duracion: Number(tipo?.duracion_minutos ?? tipo?.duracion),
+    }))
+    .filter((tipo) => tipo.nombre)
+
+  if (tiposTurno.some((tipo) => !Number.isInteger(tipo.duracion) || tipo.duracion <= 0)) {
+    throw new HttpError(400, 'Cada tipo de turno debe tener duracion en minutos valida')
+  }
+
+  await medicosRepo.upsertTurnosConfigByMedico({
+    idMedico: Number(medico.id_medico),
+    duracionTurnoEstandar,
+    tiposTurno,
+  })
+
+  return getTurnosConfigByMedico({ idMedico: Number(medico.id_medico) })
 }
 
 async function getMyTyc({ requesterIdUsuario, requesterRol }) {
@@ -261,11 +343,13 @@ async function listClinicasByMedico({ idMedico }) {
 
 async function listMyClinicas({ requesterIdUsuario, requesterRol }) {
   const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+  await ensureTurnosFeatureForUser(requesterIdUsuario)
   return listClinicasByMedico({ idMedico: Number(medico.id_medico) })
 }
 
 async function createMyClinica({ input, requesterIdUsuario, requesterRol }) {
   const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+  await ensureTurnosFeatureForUser(requesterIdUsuario)
 
   const nombre = String(input?.nombre || '').trim()
   const tipo = asBool(input?.tipo === 'virtual' || input?.tipo_virtual) ? 'virtual' : String(input?.tipo || 'presencial')
@@ -298,6 +382,7 @@ async function createMyClinica({ input, requesterIdUsuario, requesterRol }) {
 async function updateMyClinica({ idClinica, input, requesterIdUsuario, requesterRol }) {
   if (!idClinica) throw new HttpError(400, 'id_clinica es obligatorio')
   const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+  await ensureTurnosFeatureForUser(requesterIdUsuario)
 
   const allowed = await medicosRepo.ensureMedicoHasClinica({
     idMedico: Number(medico.id_medico),
@@ -331,6 +416,7 @@ async function updateMyClinica({ idClinica, input, requesterIdUsuario, requester
 async function deleteMyClinica({ idClinica, requesterIdUsuario, requesterRol }) {
   if (!idClinica) throw new HttpError(400, 'id_clinica es obligatorio')
   const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+  await ensureTurnosFeatureForUser(requesterIdUsuario)
 
   const allowed = await medicosRepo.ensureMedicoHasClinica({
     idMedico: Number(medico.id_medico),
@@ -348,6 +434,7 @@ async function deleteMyClinica({ idClinica, requesterIdUsuario, requesterRol }) 
 
 async function listMyBloqueos({ idClinica, requesterIdUsuario, requesterRol }) {
   const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+  await ensureTurnosFeatureForUser(requesterIdUsuario)
 
   if (idClinica) {
     const allowed = await medicosRepo.ensureMedicoHasClinica({
@@ -365,6 +452,7 @@ async function listMyBloqueos({ idClinica, requesterIdUsuario, requesterRol }) {
 
 async function createMyBloqueo({ input, requesterIdUsuario, requesterRol }) {
   const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+  await ensureTurnosFeatureForUser(requesterIdUsuario)
 
   const idClinica = Number(input?.id_clinica)
   const desde = String(input?.fecha_desde || input?.fecha || '')
@@ -407,6 +495,7 @@ async function createMyBloqueo({ input, requesterIdUsuario, requesterRol }) {
 async function updateMyBloqueo({ idExcepcion, input, requesterIdUsuario, requesterRol }) {
   if (!idExcepcion) throw new HttpError(400, 'id_excepcion es obligatorio')
   const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+  await ensureTurnosFeatureForUser(requesterIdUsuario)
 
   const bloqueo = await medicosRepo.findBloqueoById(Number(idExcepcion))
   if (!bloqueo || Number(bloqueo.id_medico) !== Number(medico.id_medico)) {
@@ -441,6 +530,7 @@ async function updateMyBloqueo({ idExcepcion, input, requesterIdUsuario, request
 async function deleteMyBloqueo({ idExcepcion, requesterIdUsuario, requesterRol }) {
   if (!idExcepcion) throw new HttpError(400, 'id_excepcion es obligatorio')
   const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+  await ensureTurnosFeatureForUser(requesterIdUsuario)
 
   const bloqueo = await medicosRepo.findBloqueoById(Number(idExcepcion))
   if (!bloqueo || Number(bloqueo.id_medico) !== Number(medico.id_medico)) {
@@ -451,9 +541,103 @@ async function deleteMyBloqueo({ idExcepcion, requesterIdUsuario, requesterRol }
   return { ok: true }
 }
 
+async function getMyMailConfig({ requesterIdUsuario, requesterRol }) {
+  if (requesterRol !== 'medico') {
+    throw new HttpError(403, 'Solo medicos pueden consultar esta configuracion')
+  }
+
+  const config = await medicosRepo.findMedicoMailConfigByUserId(requesterIdUsuario)
+  if (!config?.id_medico) {
+    throw new HttpError(404, 'Medico no encontrado')
+  }
+
+  return {
+    enviar_recetas_mail: Boolean(config.enviar_recetas_mail),
+  }
+}
+
+async function saveMyMailConfig({ input, requesterIdUsuario, requesterRol }) {
+  if (requesterRol !== 'medico') {
+    throw new HttpError(403, 'Solo medicos pueden guardar esta configuracion')
+  }
+
+  const config = await medicosRepo.findMedicoMailConfigByUserId(requesterIdUsuario)
+  if (!config?.id_medico) {
+    throw new HttpError(404, 'Medico no encontrado')
+  }
+
+  await medicosRepo.updateMedicoMailConfig({
+    idMedico: Number(config.id_medico),
+    enviarRecetasMail: Boolean(input?.enviar_recetas_mail),
+  })
+
+  return {
+    enviar_recetas_mail: Boolean(input?.enviar_recetas_mail),
+  }
+}
+
+async function listMyRecetasSolicitudes({ requesterIdUsuario, requesterRol }) {
+  if (requesterRol !== 'medico') {
+    throw new HttpError(403, 'Solo medicos pueden consultar recetas solicitadas')
+  }
+
+  const medico = await medicosRepo.findMedicoByUserId(requesterIdUsuario)
+  if (!medico?.id_medico) {
+    throw new HttpError(404, 'Medico no encontrado')
+  }
+
+  const rows = await medicosRepo.listRecetaSolicitudesByMedico(Number(medico.id_medico))
+
+  return rows.map((row) => ({
+    ...row,
+    items: (() => {
+      try {
+        const parsed = typeof row.items_json === 'string' ? JSON.parse(row.items_json) : row.items_json
+        return Array.isArray(parsed) ? parsed : []
+      } catch {
+        return []
+      }
+    })(),
+  }))
+}
+
+async function updateMyRecetaSolicitudEstado({ idSolicitud, estado, requesterIdUsuario, requesterRol }) {
+  if (requesterRol !== 'medico') {
+    throw new HttpError(403, 'Solo medicos pueden actualizar recetas solicitadas')
+  }
+
+  const medico = await medicosRepo.findMedicoByUserId(requesterIdUsuario)
+  if (!medico?.id_medico) {
+    throw new HttpError(404, 'Medico no encontrado')
+  }
+
+  const estadoClean = String(estado || '').trim().toLowerCase()
+  const estadoFinal = estadoClean === 'resuelta' ? 'resuelta' : 'enviada'
+
+  const updated = await medicosRepo.updateRecetaSolicitudEstadoByMedico({
+    idMedico: Number(medico.id_medico),
+    idSolicitud: Number(idSolicitud),
+    estado: estadoFinal,
+  })
+
+  if (!updated) {
+    throw new HttpError(404, 'Solicitud de receta no encontrada')
+  }
+
+  return {
+    ok: true,
+    id_solicitud: Number(idSolicitud),
+    estado: estadoFinal,
+  }
+}
+
 module.exports = {
   listMedicos,
   getDisponibilidad,
+  getMyDisponibilidad,
+  getTurnosConfigByMedico,
+  getMyTurnosConfig,
+  saveMyTurnosConfig,
   getMyTyc,
   saveMyTyc,
   listClinicasByMedico,
@@ -465,4 +649,8 @@ module.exports = {
   createMyBloqueo,
   updateMyBloqueo,
   deleteMyBloqueo,
+  getMyMailConfig,
+  saveMyMailConfig,
+  listMyRecetasSolicitudes,
+  updateMyRecetaSolicitudEstado,
 }

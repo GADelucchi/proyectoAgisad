@@ -78,18 +78,39 @@ function bloqueoFormBase(consultorios = []) {
   }
 }
 
-export default function ConfiguracionTab() {
+function turnoTipoFormBase() {
+  return {
+    id: `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    nombre: '',
+    duracion_minutos: '30',
+  }
+}
+
+function mapTipoTurno(row, index) {
+  return {
+    id: row?.id_tipo_turno || `tipo-${index}`,
+    nombre: row?.nombre || '',
+    duracion_minutos: String(row?.duracion_minutos || 30),
+  }
+}
+
+export default function ConfiguracionTab({ permiteTurnos = true }) {
   const { usuario } = useAuth()
   const doctorId = String(usuario?.idUsuario || usuario?.id || '')
+  const permiteAsistentes = Boolean(usuario?.membresia?.permite_asistentes)
+  const planNombre = usuario?.membresia?.plan_nombre || usuario?.membresia?.plan_codigo || 'Sin plan'
 
   const [consultorios, setConsultorios] = useState([])
   const [bloqueos, setBloqueos] = useState([])
   const [asistentes, setAsistentes] = useState([])
   const [duracion, setDuracion] = useState('30')
-  const [recordatorio, setRecordatorio] = useState('10')
+  const [tiposTurno, setTiposTurno] = useState([turnoTipoFormBase()])
+  const [estadoTurnos, setEstadoTurnos] = useState('')
   const [terminos, setTerminos] = useState('')
   const [terminosEstado, setTerminosEstado] = useState('')
   const [estadoCrud, setEstadoCrud] = useState('')
+  const [enviarRecetasMail, setEnviarRecetasMail] = useState(true)
+  const [estadoMailConfig, setEstadoMailConfig] = useState('')
 
   const [showClinicForm, setShowClinicForm] = useState(false)
   const [clinicForm, setClinicForm] = useState(clinicFormFromRow())
@@ -99,18 +120,26 @@ export default function ConfiguracionTab() {
   async function loadData() {
     if (!doctorId) return
 
-    const [clinicasRows, bloqueosRows, asistentesRows, tyc] = await Promise.all([
-      medicosApi.listMyClinicas(),
-      medicosApi.listMyBloqueos(),
-      asistentesApi.listByMedico(doctorId).catch(() => []),
+    const [clinicasRows, bloqueosRows, asistentesRows, tyc, turnosConfig] = await Promise.all([
+      permiteTurnos ? medicosApi.listMyClinicas() : Promise.resolve([]),
+      permiteTurnos ? medicosApi.listMyBloqueos() : Promise.resolve([]),
+      permiteAsistentes ? asistentesApi.listByMedico(doctorId).catch(() => []) : Promise.resolve([]),
       medicosApi.getMyTyc().catch(() => null),
+      permiteTurnos ? medicosApi.getMyTurnosConfig().catch(() => null) : Promise.resolve(null),
     ])
 
+    const mailConfig = await medicosApi.getMyMailConfig().catch(() => null)
+
     const clinics = Array.isArray(clinicasRows) ? clinicasRows : []
+    const tipos = Array.isArray(turnosConfig?.tipos_turno) ? turnosConfig.tipos_turno.map(mapTipoTurno) : []
+
     setConsultorios(clinics)
     setBloqueos(Array.isArray(bloqueosRows) ? bloqueosRows : [])
     setAsistentes(Array.isArray(asistentesRows) ? asistentesRows.map(mapAsistente) : [])
+    setDuracion(String(turnosConfig?.duracion_turno_estandar || 30))
+    setTiposTurno(tipos.length > 0 ? tipos : [turnoTipoFormBase()])
     setTerminos(tyc?.texto || '')
+    setEnviarRecetasMail(mailConfig?.enviar_recetas_mail !== false)
     setBloqueoForm((prev) => ({
       ...prev,
       id_clinica: prev.id_clinica || clinics[0]?.id || '',
@@ -122,9 +151,28 @@ export default function ConfiguracionTab() {
       setConsultorios([])
       setBloqueos([])
       setAsistentes([])
+      setDuracion('30')
+      setTiposTurno([turnoTipoFormBase()])
       setTerminos('')
+      setEnviarRecetasMail(true)
     })
-  }, [doctorId])
+  }, [doctorId, permiteAsistentes, permiteTurnos])
+
+  function solicitarCambioMembresia() {
+    setEstadoCrud('Pronto vas a poder cambiar tu membresia desde este panel. Contacta administracion para gestion inmediata.')
+  }
+
+  async function guardarMailConfig() {
+    try {
+      const saved = await medicosApi.saveMyMailConfig({
+        enviar_recetas_mail: Boolean(enviarRecetasMail),
+      })
+      setEnviarRecetasMail(saved?.enviar_recetas_mail !== false)
+      setEstadoMailConfig('Configuracion guardada correctamente.')
+    } catch (err) {
+      setEstadoMailConfig(err?.message || 'No se pudo guardar la configuracion.')
+    }
+  }
 
   async function patchAsistentePermisos(idAsistente, permisos) {
     await asistentesApi.patchPermisos(idAsistente, doctorId, permisos)
@@ -343,6 +391,53 @@ export default function ConfiguracionTab() {
     }
   }
 
+  function addTipoTurno() {
+    setTiposTurno((prev) => [...prev, turnoTipoFormBase()])
+  }
+
+  function updateTipoTurno(id, field, value) {
+    setTiposTurno((prev) => prev.map((tipo) => (tipo.id === id ? { ...tipo, [field]: value } : tipo)))
+  }
+
+  function removeTipoTurno(id) {
+    setTiposTurno((prev) => {
+      const next = prev.filter((tipo) => tipo.id !== id)
+      return next.length > 0 ? next : [turnoTipoFormBase()]
+    })
+  }
+
+  async function guardarTurnosConfig() {
+    const tiposLimpios = tiposTurno
+      .map((tipo) => ({
+        nombre: tipo.nombre.trim(),
+        duracion_minutos: Number(tipo.duracion_minutos),
+      }))
+      .filter((tipo) => tipo.nombre || tipo.duracion_minutos)
+
+    if (!duracion || Number(duracion) <= 0) {
+      setEstadoTurnos('Selecciona una duración estándar válida.')
+      return
+    }
+
+    if (tiposLimpios.some((tipo) => !tipo.nombre || !Number.isInteger(tipo.duracion_minutos) || tipo.duracion_minutos <= 0)) {
+      setEstadoTurnos('Cada tipo debe tener nombre y duración válida en minutos.')
+      return
+    }
+
+    try {
+      const saved = await medicosApi.saveMyTurnosConfig({
+        duracion_turno_estandar: Number(duracion),
+        tipos_turno: tiposLimpios,
+      })
+      const nextTipos = Array.isArray(saved?.tipos_turno) ? saved.tipos_turno.map(mapTipoTurno) : []
+      setDuracion(String(saved?.duracion_turno_estandar || duracion))
+      setTiposTurno(nextTipos.length > 0 ? nextTipos : [turnoTipoFormBase()])
+      setEstadoTurnos('Configuración de turnos guardada correctamente.')
+    } catch (err) {
+      setEstadoTurnos(err?.message || 'No se pudo guardar la configuración de turnos.')
+    }
+  }
+
   async function guardarTerminos() {
     const texto = terminos.trim() || TERMINOS_PREDETERMINADOS
     try {
@@ -360,6 +455,43 @@ export default function ConfiguracionTab() {
 
   return (
     <div className="config-tab">
+      <section className="config-section surface-raised">
+        <h3>Membresia</h3>
+        <p className="config-section-sub">Plan seleccionado actualmente para tu cuenta.</p>
+        <div className="config-asistente-row" style={{ marginBottom: 0 }}>
+          <div>
+            <strong>{planNombre}</strong>
+          </div>
+          <Button size="sm" variant="secondary" onClick={solicitarCambioMembresia}>Cambiar membresia</Button>
+        </div>
+      </section>
+
+      <section className="config-section surface-raised">
+        <h3>Configuracion</h3>
+        <p className="config-section-sub">Preferencias de notificaciones del profesional.</p>
+        <div className="config-asistente-row" style={{ marginBottom: 0 }}>
+          <div>
+            <strong>Enviar recetas al mail</strong>
+            <p style={{ margin: '2px 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+              Cuando esta opcion esta activa, recibis por mail los datos del paciente y lo solicitado.
+            </p>
+          </div>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.86rem' }}>
+            <input
+              type="checkbox"
+              checked={enviarRecetasMail}
+              onChange={(e) => setEnviarRecetasMail(e.target.checked)}
+            />
+            {enviarRecetasMail ? 'Activado' : 'Desactivado'}
+          </label>
+        </div>
+        <div style={{ marginTop: '0.7rem' }}>
+          <Button size="sm" onClick={guardarMailConfig}>Guardar configuración</Button>
+        </div>
+        {estadoMailConfig && <p className="config-terms-msg">{estadoMailConfig}</p>}
+      </section>
+
+      {permiteTurnos && (
       <section className="config-section surface-raised">
         <div className="config-section-header">
           <h3>Mis consultorios</h3>
@@ -491,11 +623,13 @@ export default function ConfiguracionTab() {
           </form>
         )}
       </section>
+      )}
 
+      {permiteTurnos && (
       <section className="config-section surface-raised">
         <h3>Configuracion general de turnos</h3>
-        <div className="config-grid-2">
-          <div className="form-group">
+        <div className="config-turnos-header">
+          <div className="form-group" style={{ minWidth: '280px', margin: 0 }}>
             <label className="form-label" htmlFor="duracion">Duracion turno estandar</label>
             <select id="duracion" className="form-select" value={duracion} onChange={(e) => setDuracion(e.target.value)}>
               <option value="15">15 minutos</option>
@@ -503,20 +637,51 @@ export default function ConfiguracionTab() {
               <option value="30">30 minutos</option>
               <option value="45">45 minutos</option>
               <option value="60">60 minutos</option>
+              <option value="90">90 minutos</option>
+              <option value="120">120 minutos</option>
+              <option value="160">160 minutos</option>
             </select>
           </div>
-          <div className="form-group">
-            <label className="form-label" htmlFor="recordatorio">Recordatorio</label>
-            <select id="recordatorio" className="form-select" value={recordatorio} onChange={(e) => setRecordatorio(e.target.value)}>
-              <option value="10">10 minutos antes</option>
-              <option value="30">30 minutos antes</option>
-              <option value="60">1 hora antes</option>
-              <option value="1440">1 dia antes</option>
-            </select>
-          </div>
+          <Button type="button" variant="secondary" size="sm" onClick={addTipoTurno}>
+            <Plus size={14} /> Agregar tipo
+          </Button>
         </div>
-        <Button size="sm" disabled>Guardar configuracion</Button>
+
+        <div className="config-turnos-list">
+          {tiposTurno.map((tipo) => (
+            <div key={tipo.id} className="config-turno-tipo-row">
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Nombre del tipo</label>
+                <input
+                  className="form-input"
+                  placeholder="Ej: Seguimiento, Entrevista inicial..."
+                  value={tipo.nombre}
+                  onChange={(e) => updateTipoTurno(tipo.id, 'nombre', e.target.value)}
+                />
+              </div>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Duración (minutos)</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  className="form-input"
+                  value={tipo.duracion_minutos}
+                  onChange={(e) => updateTipoTurno(tipo.id, 'duracion_minutos', e.target.value)}
+                />
+              </div>
+              <Button type="button" variant="danger" size="sm" onClick={() => removeTipoTurno(tipo.id)}>
+                <Trash2 size={12} /> Quitar
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        {tiposTurno.length === 0 && <p className="config-turnos-empty">No hay tipos de turno configurados.</p>}
+        <Button size="sm" onClick={guardarTurnosConfig}>Guardar configuracion</Button>
+        {estadoTurnos && <p className="config-terms-msg">{estadoTurnos}</p>}
       </section>
+      )}
 
       <section className="config-section surface-raised">
         <h3>Terminos y condiciones</h3>
@@ -539,6 +704,7 @@ export default function ConfiguracionTab() {
         {terminosEstado && <p className="config-terms-msg">{terminosEstado}</p>}
       </section>
 
+      {permiteTurnos && (
       <section className="config-section surface-raised">
         <h3>Bloquear fechas / vacaciones</h3>
         <form onSubmit={submitBloqueo}>
@@ -598,11 +764,16 @@ export default function ConfiguracionTab() {
           </div>
         )}
       </section>
+      )}
 
       <section className="config-section surface-raised">
         <h3>Gestion de asistentes</h3>
         <p className="config-section-sub">Permisos y estado gestionados en base de datos.</p>
-        {asistentes.map((a) => (
+        {!permiteAsistentes && (
+          <p className="config-bloqueos-vacio">Tu plan actual no incluye gestión de asistentes.</p>
+        )}
+
+        {permiteAsistentes && asistentes.map((a) => (
           <div key={a.id} className="config-asistente-row">
             <div>
               <strong>{a.nombre}</strong>
@@ -629,15 +800,17 @@ export default function ConfiguracionTab() {
           </div>
         ))}
 
-        <AltaAsistenteForm
-          title="Alta de asistente"
-          subtitle="Le damos acceso al sistema y lo vinculamos a este profesional."
-          clinicOptions={consultorios.map((consultorio) => ({
-            id: consultorio.id,
-            label: consultorio.nombre,
-          }))}
-          onCreate={crearAsistente}
-        />
+        {permiteAsistentes && (
+          <AltaAsistenteForm
+            title="Alta de asistente"
+            subtitle="Le damos acceso al sistema y lo vinculamos a este profesional."
+            clinicOptions={consultorios.map((consultorio) => ({
+              id: consultorio.id,
+              label: consultorio.nombre,
+            }))}
+            onCreate={crearAsistente}
+          />
+        )}
       </section>
 
       {estadoCrud && <p className="config-terms-msg">{estadoCrud}</p>}

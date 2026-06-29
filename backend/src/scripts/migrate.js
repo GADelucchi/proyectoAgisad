@@ -25,6 +25,10 @@ const MIGRATIONS = [
   '008_add_mensaje_solicitudes.sql',
   '009_hotfix_medico_disponibilidad_excepciones.sql',
   '011_hotfix_clinicas_virtual_link.sql',
+  '012_medico_turnos_config.sql',
+  '013_membresia_planes_catalog.sql',
+  '014_membresia_planes_vigencia_y_permisos.sql',
+  '015_medico_recetas_mail_config.sql',
 ]
 
 async function ensureLogTable(conn) {

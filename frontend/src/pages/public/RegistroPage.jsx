@@ -14,7 +14,7 @@ const CARDS = [
   {
     role: 'profesional',
     title: 'Profesional',
-    description: 'Elegí plan: Starter/Medium/Professional crea perfil médico y Empresarial crea perfil gerente.',
+    description: 'Elegí plan: Inicial/Medio/Profesional crea perfil médico y Empresarial crea perfil gerente.',
     bullets: ['Datos personales', 'Especialidad o clínica', 'Membresía y rol automático'],
     to: '/registro/profesional',
     cta: 'Crear cuenta profesional',

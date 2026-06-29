@@ -7,10 +7,12 @@ import AgendaTab       from './tabs/AgendaTab'
 import ConfiguracionTab from './tabs/ConfiguracionTab'
 import PacientesTab    from './tabs/PacientesTab'
 import HistorialTab    from './tabs/HistorialTab'
+import RecetasTab      from './tabs/RecetasTab'
 import './PanelMedicoPage.css'
 
 const TABS = [
   { id: 'agenda',         label: 'Agenda' },
+  { id: 'recetas',        label: 'Recetas' },
   { id: 'configuracion',  label: 'Configuración' },
   { id: 'pacientes',      label: 'Pacientes' },
   { id: 'historial',      label: 'Historial' },
@@ -26,33 +28,33 @@ function toIsoDate(date) {
 export default function PanelMedicoPage() {
   const { usuario } = useAuth()
   const [tab, setTab] = useState('agenda')
-  const [kpis, setKpis] = useState({ total: 0, primeraVez: 0, libres: 0 })
+  const [kpis, setKpis] = useState({ total: 0, tiposConfigurados: 0, libres: 0 })
   const hoy = formatDateDdMmYyyy(new Date())
   const todayDate = new Date()
   const todayIso = toIsoDate(todayDate)
-  const doctorId = usuario?.idUsuario || usuario?.id
+  const isMedico = usuario?.rol === 'medico'
+  const permiteTurnos = Boolean(usuario?.membresia?.permite_turnos)
 
   useEffect(() => {
-    if (!doctorId) return
+    if (!isMedico || !usuario?.idUsuario || !permiteTurnos) return
 
     let cancelled = false
     async function loadKpis() {
       try {
-        const [consultorios, turnos] = await Promise.all([
-          medicosApi.listClinicasByMedico(doctorId),
-          turnosApi.listarPorMedico({ idMedico: doctorId, desde: todayIso, hasta: todayIso }),
+        const [consultorios, turnos, turnosConfig] = await Promise.all([
+          medicosApi.listMyClinicas(),
+          turnosApi.listarPorMedico({ desde: todayIso, hasta: todayIso }),
+          medicosApi.getMyTurnosConfig().catch(() => null),
         ])
 
         if (cancelled) return
         const total = Array.isArray(turnos) ? turnos.length : 0
-        const primeraVez = Array.isArray(turnos)
-          ? turnos.filter((t) => String(t.motivo_consulta || '').toLowerCase().includes('primera')).length
-          : 0
+        const tiposConfigurados = Array.isArray(turnosConfig?.tipos_turno) ? turnosConfig.tipos_turno.length : 0
         const capacidad = Array.isArray(consultorios) ? consultorios.length * 16 : 0
-        setKpis({ total, primeraVez, libres: Math.max(capacidad - total, 0) })
+        setKpis({ total, tiposConfigurados, libres: Math.max(capacidad - total, 0) })
       } catch {
         if (!cancelled) {
-          setKpis({ total: 0, primeraVez: 0, libres: 0 })
+          setKpis({ total: 0, tiposConfigurados: 0, libres: 0 })
         }
       }
     }
@@ -61,7 +63,13 @@ export default function PanelMedicoPage() {
     return () => {
       cancelled = true
     }
-  }, [doctorId, todayIso])
+  }, [isMedico, usuario?.idUsuario, todayIso, permiteTurnos])
+
+  useEffect(() => {
+    if (!permiteTurnos && ['agenda', 'historial'].includes(tab)) {
+      setTab('pacientes')
+    }
+  }, [permiteTurnos, tab])
 
   return (
     <div className="panel-medico">
@@ -80,8 +88,8 @@ export default function PanelMedicoPage() {
           <span className="kpi-label">Turnos totales</span>
         </div>
         <div className="kpi-card surface-raised">
-          <span className="kpi-valor">{kpis.primeraVez}</span>
-          <span className="kpi-label">Primera vez</span>
+          <span className="kpi-valor">{kpis.tiposConfigurados}</span>
+          <span className="kpi-label">Tipos configurados</span>
         </div>
         <div className="kpi-card surface-raised">
           <span className="kpi-valor kpi-accent">{kpis.libres}</span>
@@ -92,6 +100,7 @@ export default function PanelMedicoPage() {
       {/* Tabs */}
       <div className="panel-tabs">
         {TABS.map(t => (
+          (t.id !== 'agenda' && t.id !== 'historial') || permiteTurnos ? (
           <button
             key={t.id}
             className={`panel-tab-btn ${tab === t.id ? 'active' : ''}`}
@@ -99,15 +108,17 @@ export default function PanelMedicoPage() {
           >
             {t.label}
           </button>
+          ) : null
         ))}
       </div>
 
       {/* Contenido */}
       <div className="panel-tab-content">
-        {tab === 'agenda'        && <AgendaTab />}
-        {tab === 'configuracion' && <ConfiguracionTab />}
+        {tab === 'agenda'        && permiteTurnos && <AgendaTab />}
+        {tab === 'recetas'       && <RecetasTab />}
+        {tab === 'configuracion' && <ConfiguracionTab permiteTurnos={permiteTurnos} />}
         {tab === 'pacientes'     && <PacientesTab />}
-        {tab === 'historial'     && <HistorialTab />}
+        {tab === 'historial'     && permiteTurnos && <HistorialTab />}
       </div>
     </div>
   )

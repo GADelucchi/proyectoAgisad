@@ -17,11 +17,22 @@ async function listMedicos({ q, idEspecialidad, idCiudad }) {
       m.id_ciudad,
       c.nombre AS ciudad,
       e.nombre AS especialidad,
-      u.email
+      u.email,
+      COALESCE(mp.permite_turnos, 1) AS permite_turnos
     FROM medicos m
     INNER JOIN usuarios u ON u.id_usuario = m.id_usuario
     LEFT JOIN ciudades c ON c.id_ciudad = m.id_ciudad
     LEFT JOIN especialidades e ON e.id_especialidad = m.id_especialidad
+    LEFT JOIN (
+      SELECT m1.*
+      FROM membresias m1
+      INNER JOIN (
+        SELECT id_usuario, MAX(id_membresia) AS id_membresia
+        FROM membresias
+        GROUP BY id_usuario
+      ) latest ON latest.id_membresia = m1.id_membresia
+    ) ms ON ms.id_usuario = u.id_usuario
+    LEFT JOIN membresia_planes mp ON mp.id_plan = ms.id_plan OR LOWER(mp.codigo) = LOWER(ms.plan)
     WHERE 1=1
       AND (:idEspecialidad IS NULL OR m.id_especialidad = :idEspecialidad)
       AND (:idCiudad IS NULL OR m.id_ciudad = :idCiudad)
@@ -48,10 +59,21 @@ async function listMedicos({ q, idEspecialidad, idCiudad }) {
         m.id_ciudad,
         c.nombre AS ciudad,
         NULL AS especialidad,
-        u.email
+        u.email,
+        COALESCE(mp.permite_turnos, 1) AS permite_turnos
       FROM medicos m
       INNER JOIN usuarios u ON u.id_usuario = m.id_usuario
       LEFT JOIN ciudades c ON c.id_ciudad = m.id_ciudad
+      LEFT JOIN (
+        SELECT m1.*
+        FROM membresias m1
+        INNER JOIN (
+          SELECT id_usuario, MAX(id_membresia) AS id_membresia
+          FROM membresias
+          GROUP BY id_usuario
+        ) latest ON latest.id_membresia = m1.id_membresia
+      ) ms ON ms.id_usuario = u.id_usuario
+      LEFT JOIN membresia_planes mp ON mp.id_plan = ms.id_plan OR LOWER(mp.codigo) = LOWER(ms.plan)
       WHERE 1=1
         AND (:idCiudad IS NULL OR m.id_ciudad = :idCiudad)
         AND (
@@ -105,7 +127,8 @@ async function findExtraDisponibilidadByMedicoClinicaFecha({ idMedico, idClinica
 
 async function findTurnosTomados({ idMedico, fecha }) {
   return query(
-    `SELECT DATE_FORMAT(hora, '%H:%i') AS hora
+    `SELECT DATE_FORMAT(hora, '%H:%i') AS hora,
+            motivo_consulta
      FROM turnos
      WHERE id_medico = :idMedico
        AND fecha = :fecha
@@ -136,6 +159,74 @@ async function findActiveTycByMedico(idMedico) {
     { idMedico }
   )
   return rows[0] || null
+}
+
+async function findTurnosConfigByMedico(idMedico) {
+  const configRows = await query(
+    `SELECT id_medico,
+            duracion_turno_estandar,
+            creado_en,
+            actualizado_en
+     FROM medico_turnos_config
+     WHERE id_medico = :idMedico
+     LIMIT 1`,
+    { idMedico }
+  )
+
+  const tiposRows = await query(
+    `SELECT id_tipo_turno,
+            nombre,
+            duracion_minutos,
+            activo,
+            creado_en,
+            actualizado_en
+     FROM medico_tipos_turno
+     WHERE id_medico = :idMedico
+       AND activo = 1
+     ORDER BY id_tipo_turno ASC`,
+    { idMedico }
+  )
+
+  return {
+    config: configRows[0] || null,
+    tipos: tiposRows,
+  }
+}
+
+async function upsertTurnosConfigByMedico({ idMedico, duracionTurnoEstandar, tiposTurno }) {
+  const conn = await pool.getConnection()
+  try {
+    await conn.beginTransaction()
+
+    await conn.execute(
+      `INSERT INTO medico_turnos_config (id_medico, duracion_turno_estandar)
+       VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE duracion_turno_estandar = VALUES(duracion_turno_estandar)`,
+      [idMedico, duracionTurnoEstandar]
+    )
+
+    await conn.execute(
+      `UPDATE medico_tipos_turno
+       SET activo = 0
+       WHERE id_medico = ?`,
+      [idMedico]
+    )
+
+    for (const tipo of tiposTurno) {
+      await conn.execute(
+        `INSERT INTO medico_tipos_turno (id_medico, nombre, duracion_minutos, activo)
+         VALUES (?, ?, ?, 1)`,
+        [idMedico, tipo.nombre, tipo.duracion]
+      )
+    }
+
+    await conn.commit()
+  } catch (err) {
+    await conn.rollback()
+    throw err
+  } finally {
+    conn.release()
+  }
 }
 
 async function deactivateTycByMedico(idMedico) {
@@ -220,6 +311,67 @@ async function findMedicoByUserId(idUsuario) {
     { idUsuario }
   )
   return rows[0] || null
+}
+
+async function findMedicoMailConfigByUserId(idUsuario) {
+  const rows = await query(
+    `SELECT
+       m.id_medico,
+       COALESCE(m.enviar_recetas_mail, 1) AS enviar_recetas_mail
+     FROM medicos m
+     WHERE m.id_usuario = :idUsuario
+     LIMIT 1`,
+    { idUsuario }
+  )
+  return rows[0] || null
+}
+
+async function updateMedicoMailConfig({ idMedico, enviarRecetasMail }) {
+  await query(
+    `UPDATE medicos
+     SET enviar_recetas_mail = :enviarRecetasMail
+     WHERE id_medico = :idMedico`,
+    {
+      idMedico,
+      enviarRecetasMail: enviarRecetasMail ? 1 : 0,
+    }
+  )
+}
+
+async function listRecetaSolicitudesByMedico(idMedico) {
+  return query(
+    `SELECT
+       rs.id_solicitud,
+       rs.id_paciente,
+       rs.tipo,
+       rs.estado,
+       rs.items_json,
+       rs.enviado_a_email,
+       DATE_FORMAT(rs.creado_en, '%Y-%m-%d %H:%i:%s') AS creado_en_iso,
+       p.nombre AS paciente_nombre,
+       p.apellido AS paciente_apellido,
+       p.dni AS paciente_dni,
+       p.telefono AS paciente_telefono,
+       u.email AS paciente_email
+     FROM receta_solicitudes rs
+     INNER JOIN pacientes p ON p.id_paciente = rs.id_paciente
+     INNER JOIN usuarios u ON u.id_usuario = p.id_usuario
+     WHERE rs.id_medico = :idMedico
+     ORDER BY rs.creado_en DESC, rs.id_solicitud DESC`,
+    { idMedico }
+  )
+}
+
+async function updateRecetaSolicitudEstadoByMedico({ idMedico, idSolicitud, estado }) {
+  const result = await query(
+    `UPDATE receta_solicitudes
+     SET estado = :estado
+     WHERE id_solicitud = :idSolicitud
+       AND id_medico = :idMedico`,
+    { idMedico, idSolicitud, estado }
+  )
+
+  return Number(result?.affectedRows || 0) > 0
 }
 
 async function findAnyCityId() {
@@ -455,10 +607,16 @@ module.exports = {
   findTurnosTomados,
   findMedicoIdByUserId,
   findActiveTycByMedico,
+  findTurnosConfigByMedico,
+  upsertTurnosConfigByMedico,
   deactivateTycByMedico,
   insertMedicoTyc,
   listClinicasByMedico,
   findMedicoByUserId,
+  findMedicoMailConfigByUserId,
+  updateMedicoMailConfig,
+  listRecetaSolicitudesByMedico,
+  updateRecetaSolicitudEstadoByMedico,
   findAnyCityId,
   ensureMedicoHasClinica,
   createClinicaWithDisponibilidad,

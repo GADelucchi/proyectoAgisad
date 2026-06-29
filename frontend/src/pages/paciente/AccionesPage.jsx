@@ -31,8 +31,12 @@ export default function AccionesPage() {
   const [aceptaTerminos, setAceptaTerminos] = useState(false)
   const [accionPendiente, setAccionPendiente] = useState(null)
   const [tycApi, setTycApi] = useState(null)
+  const [permiteTurnos, setPermiteTurnos] = useState(true)
 
-  const accionesDisponibles = ACCIONES_POR_DEFECTO
+  const accionesDisponibles = ACCIONES_POR_DEFECTO.filter((accion) => {
+    if (!permiteTurnos && (accion === 'turno' || accion === 'cancelar')) return false
+    return true
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -53,12 +57,14 @@ export default function AccionesPage() {
               especialidad: found.especialidad || 'Especialidad',
               matricula: found.matricula || '-',
             })
+            setPermiteTurnos(found.permiteTurnos !== false)
           }
           setTycApi(tyc)
         }
       } catch {
         if (!cancelled) {
           setTycApi(null)
+          setPermiteTurnos(true)
         }
       }
     }

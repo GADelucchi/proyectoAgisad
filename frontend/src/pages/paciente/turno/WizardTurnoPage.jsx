@@ -75,6 +75,7 @@ export default function WizardTurnoPage() {
   const [calendarStateByDate, setCalendarStateByDate] = useState({})
   const [loadingMonth, setLoadingMonth] = useState(false)
   const [sel, setSel] = useState({ consultorio: null, tipo: null, fecha: null, horario: null, idDisponibilidad: null })
+  const [permiteTurnos, setPermiteTurnos] = useState(true)
 
   useEffect(() => {
     let cancelled = false
@@ -88,10 +89,16 @@ export default function WizardTurnoPage() {
 
         if (cancelled) return
         const found = (Array.isArray(medicosRows) ? medicosRows : []).find((m) => String(m.id) === String(medicoId))
-        if (found) setMedico({ nombre: found.nombre })
+        if (found) {
+          setMedico({ nombre: found.nombre })
+          setPermiteTurnos(found.permiteTurnos !== false)
+        }
         setConsultorios(Array.isArray(clinicasRows) ? clinicasRows : [])
       } catch {
-        if (!cancelled) setConsultorios([])
+        if (!cancelled) {
+          setConsultorios([])
+          setPermiteTurnos(true)
+        }
       }
     }
 
@@ -319,7 +326,7 @@ export default function WizardTurnoPage() {
                     key={iso}
                     type="button"
                     className={`wizard-cal-dia ${state} ${isSameDay(date, today) ? 'hoy' : ''} ${isSelected ? 'seleccionado' : ''}`}
-                    disabled={isPast}
+                    disabled={isPast || state === 'sin-horarios'}
                     onClick={() => {
                       setSel((prev) => ({
                         ...prev,
@@ -351,15 +358,22 @@ export default function WizardTurnoPage() {
               <>
                 <p className="wizard-horarios-fecha">{formatDateDdMmYyyy(sel.fecha)}</p>
                 <div className="wizard-horarios">
-                  {availableSlots.map((slot) => (
-                    <button
-                      key={`${slot.id_disponibilidad}-${slot.hora}`}
-                      className={`wizard-horario-btn ${sel.horario === slot.hora ? 'selected' : ''}`}
-                      onClick={() => setSel((prev) => ({ ...prev, horario: slot.hora, idDisponibilidad: slot.id_disponibilidad }))}
-                    >
-                      {formatTime24h(slot.hora)}
-                    </button>
-                  ))}
+                    {slots.map((slot) => {
+                      const isBlocked = Boolean(slot.bloqueado)
+                      const isOccupied = !slot.libre && !isBlocked
+
+                      return (
+                        <button
+                          key={`${slot.id_disponibilidad}-${slot.hora}`}
+                          type="button"
+                          className={`wizard-horario-btn ${sel.horario === slot.hora ? 'selected' : ''} ${isBlocked ? 'bloqueado' : ''} ${isOccupied ? 'ocupado' : ''}`}
+                          disabled={isBlocked || isOccupied}
+                          onClick={() => setSel((prev) => ({ ...prev, horario: slot.hora, idDisponibilidad: slot.id_disponibilidad }))}
+                        >
+                          <span className="wizard-horario-texto">{formatTime24h(slot.hora)}</span>
+                        </button>
+                      )
+                    })}
                   {availableSlots.length === 0 && !selectedDayBlocked && (
                     <p className="wizard-no-disponible">No hay horarios libres para esta fecha.</p>
                   )}
@@ -370,6 +384,20 @@ export default function WizardTurnoPage() {
               </>
             )}
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!permiteTurnos) {
+    return (
+      <div className="wizard-page">
+        <div className="surface-raised" style={{ padding: '1rem' }}>
+          <h2 style={{ marginTop: 0 }}>Turnos no disponibles</h2>
+          <p style={{ marginTop: '0.3rem' }}>
+            Este medico tiene plan Inicial, por lo que no esta habilitada la solicitud de turnos.
+          </p>
+          <Button onClick={() => navigate(`/paciente/medico/${medicoId}`)}>Volver al menu</Button>
         </div>
       </div>
     )

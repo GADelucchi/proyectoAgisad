@@ -17,11 +17,23 @@ export const turnosApi = {
   crear: (data) => api.post('/turnos', data),
   listarPorMedico: async ({ idMedico, desde, hasta }) => {
     const qs = new URLSearchParams({
-      id_medico: String(idMedico),
       desde: String(desde),
       hasta: String(hasta),
     })
+    if (idMedico !== undefined && idMedico !== null && String(idMedico).trim() !== '') {
+      qs.set('id_medico', String(idMedico))
+    }
     return api.get(`/turnos?${qs.toString()}`)
+  },
+  listarHistorialPorMedico: async ({ idMedico, desde, hasta }) => {
+    const qs = new URLSearchParams({
+      desde: String(desde),
+      hasta: String(hasta),
+    })
+    if (idMedico !== undefined && idMedico !== null && String(idMedico).trim() !== '') {
+      qs.set('id_medico', String(idMedico))
+    }
+    return api.get(`/turnos/historial?${qs.toString()}`)
   },
   listarMisTurnos: async ({ idMedico } = {}) => {
     const q = idMedico ? `?id_medico=${encodeURIComponent(idMedico)}` : ''

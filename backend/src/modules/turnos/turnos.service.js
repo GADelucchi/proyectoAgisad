@@ -28,6 +28,14 @@ async function crearTurno(input, authUser) {
     throw new HttpError(400, 'id_paciente invalido')
   }
 
+  const puedeTomarTurnos = await turnosRepo.medicoPermiteTurnos(Number(input.id_medico))
+  if (puedeTomarTurnos === null) {
+    throw new HttpError(404, 'Medico no encontrado')
+  }
+  if (!puedeTomarTurnos) {
+    throw new HttpError(403, 'El medico seleccionado no tiene habilitado el modulo de turnos')
+  }
+
   try {
     const idTurno = await turnosRepo.insertTurno({
       idPaciente,
@@ -74,11 +82,46 @@ async function cambiarEstado(idTurno, estadoNuevo, authUser, motivo) {
   }
 }
 
-async function listarPorMedico({ idMedico, desde, hasta }) {
-  if (!idMedico || !desde || !hasta) {
-    throw new HttpError(400, 'id_medico, desde y hasta son obligatorios')
+async function listarPorMedico({ idMedico, desde, hasta, requesterIdUsuario, requesterRol }) {
+  if (!desde || !hasta) {
+    throw new HttpError(400, 'desde y hasta son obligatorios')
   }
-  return turnosRepo.listTurnosByMedicoRange({ idMedico: Number(idMedico), desde, hasta })
+
+  let resolvedIdMedico = idMedico ? Number(idMedico) : null
+
+  if (!resolvedIdMedico && requesterRol === 'medico') {
+    resolvedIdMedico = await turnosRepo.findMedicoIdByUserId(requesterIdUsuario)
+    if (!resolvedIdMedico) {
+      throw new HttpError(404, 'Medico no encontrado')
+    }
+  }
+
+  if (!resolvedIdMedico) {
+    throw new HttpError(400, 'id_medico es obligatorio para este rol')
+  }
+
+  return turnosRepo.listTurnosByMedicoRange({ idMedico: resolvedIdMedico, desde, hasta })
+}
+
+async function listarHistorialPorMedico({ idMedico, desde, hasta, requesterIdUsuario, requesterRol }) {
+  if (!desde || !hasta) {
+    throw new HttpError(400, 'desde y hasta son obligatorios')
+  }
+
+  let resolvedIdMedico = idMedico ? Number(idMedico) : null
+
+  if (!resolvedIdMedico && requesterRol === 'medico') {
+    resolvedIdMedico = await turnosRepo.findMedicoIdByUserId(requesterIdUsuario)
+    if (!resolvedIdMedico) {
+      throw new HttpError(404, 'Medico no encontrado')
+    }
+  }
+
+  if (!resolvedIdMedico) {
+    throw new HttpError(400, 'id_medico es obligatorio para este rol')
+  }
+
+  return turnosRepo.listHistorialByMedicoRange({ idMedico: resolvedIdMedico, desde, hasta })
 }
 
 async function listarPorPaciente({ idMedico, requesterIdUsuario, requesterRol }) {
@@ -116,6 +159,11 @@ async function cancelarPorPaciente({ idTurno, motivo, requesterIdUsuario, reques
     throw new HttpError(403, 'Solo podés cancelar turnos propios')
   }
 
+  const puedeTomarTurnos = await turnosRepo.medicoPermiteTurnos(Number(turno.id_medico))
+  if (puedeTomarTurnos === false) {
+    throw new HttpError(403, 'El medico seleccionado no tiene habilitado el modulo de turnos')
+  }
+
   const updated = await turnosRepo.updateTurnoEstado({
     idTurno: Number(idTurno),
     estadoNuevo: 'cancelado_paciente',
@@ -137,6 +185,7 @@ module.exports = {
   crearTurno,
   cambiarEstado,
   listarPorMedico,
+  listarHistorialPorMedico,
   listarPorPaciente,
   cancelarPorPaciente,
 }

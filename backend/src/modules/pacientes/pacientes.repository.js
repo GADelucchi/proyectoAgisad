@@ -88,6 +88,7 @@ async function findMedicoRecetaById(idMedico) {
        m.id_medico,
        m.nombre,
        m.apellido,
+       COALESCE(m.enviar_recetas_mail, 1) AS enviar_recetas_mail,
        u.email,
        e.nombre AS especialidad
      FROM medicos m

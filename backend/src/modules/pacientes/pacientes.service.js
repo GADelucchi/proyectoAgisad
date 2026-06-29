@@ -20,7 +20,12 @@ const { sendRecetaSolicitudEmail, sendPacienteMensajeEmail } = require('../../ut
  * Requiere id_medico en query string.
  */
 async function listPacientes({ idMedico, search, requesterIdUsuario, requesterRol }) {
-  const target = Number(idMedico)
+  let target = idMedico ? Number(idMedico) : null
+
+  if (!target && requesterRol === 'medico') {
+    target = Number(await findMedicoIdByUserId(requesterIdUsuario)) || null
+  }
+
   if (!target) throw new HttpError(400, 'Se requiere id_medico como parámetro')
 
   if (requesterRol === 'medico') {
@@ -122,13 +127,15 @@ async function solicitarReceta({ idMedico, tipo, items, requesterIdUsuario, requ
     enviadoAEmail: medico.email,
   })
 
-  await sendRecetaSolicitudEmail({
-    to: medico.email,
-    medico,
-    paciente,
-    tipo: tipoReceta,
-    items: normalizedItems,
-  })
+  if (medico.enviar_recetas_mail !== 0) {
+    await sendRecetaSolicitudEmail({
+      to: medico.email,
+      medico,
+      paciente,
+      tipo: tipoReceta,
+      items: normalizedItems,
+    })
+  }
 
   return {
     ...insert,

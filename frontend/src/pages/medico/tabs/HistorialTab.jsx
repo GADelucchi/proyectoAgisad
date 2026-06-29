@@ -6,9 +6,12 @@ import { turnosApi } from '../../../services/turnos.api'
 import './HistorialTab.css'
 
 const BADGE_EVENTO = {
-  asistio: 'badge-success',
-  no_asistio: 'badge-error',
-  cancelado: 'badge-warning',
+  completado: 'badge-success',
+  ausente: 'badge-error',
+  cancelado_clinica: 'badge-warning',
+  cancelado_paciente: 'badge-warning',
+  confirmado: 'badge-primary',
+  en_curso: 'badge-primary',
   pendiente: 'badge-primary',
 }
 
@@ -20,10 +23,21 @@ function toIsoDate(date) {
 }
 
 function asLabel(estado) {
-  if (estado === 'asistio') return 'Paciente asistio'
-  if (estado === 'no_asistio') return 'Paciente no asistio'
-  if (estado === 'cancelado') return 'Turno cancelado'
+  if (estado === 'completado') return 'Paciente asistio'
+  if (estado === 'ausente') return 'Paciente no asistio'
+  if (estado === 'cancelado_clinica') return 'Turno cancelado por profesional o equipo'
+  if (estado === 'cancelado_paciente') return 'Turno cancelado por paciente'
+  if (estado === 'confirmado') return 'Turno confirmado'
+  if (estado === 'en_curso') return 'Consulta en curso'
   return 'Turno pendiente'
+}
+
+function actorLabel(row) {
+  if (!row.modificado_por) return 'Sistema'
+
+  const rol = row.actor_rol ? `${row.actor_rol}: ` : ''
+  const identity = row.actor_username || row.actor_email || `Usuario ${row.modificado_por}`
+  return `${rol}${identity}`
 }
 
 export default function HistorialTab() {
@@ -31,16 +45,16 @@ export default function HistorialTab() {
   const [query, setQuery] = useState('')
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(false)
-  const doctorId = usuario?.idUsuario || usuario?.id
+  const isMedico = usuario?.rol === 'medico'
 
   async function load() {
-    if (!doctorId) return
+    if (!isMedico || !usuario?.idUsuario) return
     setLoading(true)
     try {
       const today = new Date()
       const desde = toIsoDate(new Date(today.getFullYear(), today.getMonth(), 1))
       const hasta = toIsoDate(new Date(today.getFullYear(), today.getMonth() + 1, 0))
-      const turnos = await turnosApi.listarPorMedico({ idMedico: doctorId, desde, hasta })
+      const turnos = await turnosApi.listarHistorialPorMedico({ desde, hasta })
       setRows(Array.isArray(turnos) ? turnos : [])
     } finally {
       setLoading(false)
@@ -49,7 +63,7 @@ export default function HistorialTab() {
 
   useEffect(() => {
     load()
-  }, [doctorId])
+  }, [isMedico, usuario?.idUsuario])
 
   const filtrados = useMemo(
     () =>
@@ -92,16 +106,18 @@ export default function HistorialTab() {
               <th>Evento</th>
               <th>Paciente</th>
               <th>Consultorio</th>
+              <th>Realizado por</th>
               <th>Estado</th>
             </tr>
           </thead>
           <tbody>
             {filtrados.map((e) => (
-              <tr key={e.id_turno}>
+              <tr key={e.id_historial}>
                 <td style={{ whiteSpace: 'nowrap', fontSize: '0.82rem' }}>{`${e.fecha} ${e.hora}`}</td>
                 <td><span className={`badge ${BADGE_EVENTO[e.estado] || 'badge-muted'}`}>{asLabel(e.estado)}</span></td>
                 <td>{`${e.paciente_nombre || ''} ${e.paciente_apellido || ''}`.trim()}</td>
-                <td>{e.id_clinica}</td>
+                <td>{e.clinica_nombre || `Consultorio ${e.id_clinica}`}</td>
+                <td>{actorLabel(e)}</td>
                 <td><span className={`badge ${BADGE_EVENTO[e.estado] || 'badge-muted'}`}>{e.estado}</span></td>
               </tr>
             ))}

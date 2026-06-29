@@ -10,6 +10,19 @@ async function findUserByEmail(email) {
        u.password_hash,
        u.activo,
        r.nombre AS rol,
+       ms.id_membresia,
+       ms.plan AS plan_codigo,
+       ms.estado AS membresia_estado,
+       ms.pagado_hasta AS membresia_pagado_hasta,
+       CASE
+         WHEN ms.id_membresia IS NULL THEN 0
+         WHEN ms.estado = 'activa' AND (ms.pagado_hasta IS NULL OR ms.pagado_hasta >= CURDATE()) THEN 1
+         ELSE 0
+       END AS membresia_activa_vigente,
+       COALESCE(mp.nombre, ms.plan) AS plan_nombre,
+       COALESCE(mp.permite_turnos, 1) AS permite_turnos,
+       COALESCE(mp.permite_asistentes, 1) AS permite_asistentes,
+       mp.limite_asistentes,
        COALESCE(
          CONCAT(p.nombre, ' ', p.apellido),
          CONCAT(m.nombre, ' ', m.apellido),
@@ -23,6 +36,17 @@ async function findUserByEmail(email) {
      LEFT JOIN medicos m ON m.id_usuario = u.id_usuario
      LEFT JOIN gerentes g ON g.id_usuario = u.id_usuario
      LEFT JOIN asistentes a ON a.id_usuario = u.id_usuario
+     LEFT JOIN (
+       SELECT m1.*
+       FROM membresias m1
+       INNER JOIN (
+         SELECT id_usuario, MAX(id_membresia) AS id_membresia
+         FROM membresias
+         GROUP BY id_usuario
+       ) latest ON latest.id_membresia = m1.id_membresia
+     ) ms ON ms.id_usuario = u.id_usuario
+     LEFT JOIN membresia_planes mp
+       ON mp.id_plan = ms.id_plan OR LOWER(mp.codigo) = LOWER(ms.plan)
      WHERE u.email = :email
      LIMIT 1`,
     { email }

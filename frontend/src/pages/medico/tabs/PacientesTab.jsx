@@ -17,16 +17,16 @@ export default function PacientesTab() {
   const [query, setQuery] = useState('')
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(false)
-  const doctorId = usuario?.idUsuario || usuario?.id
+  const isMedico = usuario?.rol === 'medico'
 
   async function load() {
-    if (!doctorId) return
+    if (!isMedico || !usuario?.idUsuario) return
     setLoading(true)
     try {
       const today = new Date()
       const desde = toIsoDate(new Date(today.getFullYear(), today.getMonth(), 1))
       const hasta = toIsoDate(new Date(today.getFullYear(), today.getMonth() + 1, 0))
-      const turnos = await turnosApi.listarPorMedico({ idMedico: doctorId, desde, hasta })
+      const turnos = await turnosApi.listarPorMedico({ desde, hasta })
       setRows(Array.isArray(turnos) ? turnos : [])
     } finally {
       setLoading(false)
@@ -35,7 +35,7 @@ export default function PacientesTab() {
 
   useEffect(() => {
     load()
-  }, [doctorId])
+  }, [isMedico, usuario?.idUsuario])
 
   const pacientes = useMemo(() => {
     const byName = new Map()

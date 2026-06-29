@@ -26,6 +26,56 @@ async function getDisponibilidad(req, res, next) {
   }
 }
 
+async function getMyDisponibilidad(req, res, next) {
+  try {
+    const data = await medicosService.getMyDisponibilidad({
+      idClinica: Number(req.query.id_clinica),
+      fecha: req.query.fecha,
+      requesterIdUsuario: req.user.idUsuario,
+      requesterRol: req.user.rol,
+    })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function getTurnosConfigByMedico(req, res, next) {
+  try {
+    const data = await medicosService.getTurnosConfigByMedico({
+      idMedico: Number(req.params.id_medico),
+    })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function getMyTurnosConfig(req, res, next) {
+  try {
+    const data = await medicosService.getMyTurnosConfig({
+      requesterIdUsuario: req.user.idUsuario,
+      requesterRol: req.user.rol,
+    })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function saveMyTurnosConfig(req, res, next) {
+  try {
+    const data = await medicosService.saveMyTurnosConfig({
+      input: req.body,
+      requesterIdUsuario: req.user.idUsuario,
+      requesterRol: req.user.rol,
+    })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
 async function getMyTyc(req, res, next) {
   try {
     const data = await medicosService.getMyTyc({
@@ -167,9 +217,64 @@ async function deleteMyBloqueo(req, res, next) {
   }
 }
 
+async function getMyMailConfig(req, res, next) {
+  try {
+    const data = await medicosService.getMyMailConfig({
+      requesterIdUsuario: req.user.idUsuario,
+      requesterRol: req.user.rol,
+    })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function saveMyMailConfig(req, res, next) {
+  try {
+    const data = await medicosService.saveMyMailConfig({
+      input: req.body,
+      requesterIdUsuario: req.user.idUsuario,
+      requesterRol: req.user.rol,
+    })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function listMyRecetasSolicitudes(req, res, next) {
+  try {
+    const data = await medicosService.listMyRecetasSolicitudes({
+      requesterIdUsuario: req.user.idUsuario,
+      requesterRol: req.user.rol,
+    })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function updateMyRecetaSolicitudEstado(req, res, next) {
+  try {
+    const data = await medicosService.updateMyRecetaSolicitudEstado({
+      idSolicitud: Number(req.params.id_solicitud),
+      estado: req.body?.estado,
+      requesterIdUsuario: req.user.idUsuario,
+      requesterRol: req.user.rol,
+    })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
 module.exports = {
   listMedicos,
   getDisponibilidad,
+  getMyDisponibilidad,
+  getTurnosConfigByMedico,
+  getMyTurnosConfig,
+  saveMyTurnosConfig,
   getMyTyc,
   saveMyTyc,
   listClinicas,
@@ -181,4 +286,8 @@ module.exports = {
   createMyBloqueo,
   updateMyBloqueo,
   deleteMyBloqueo,
+  getMyMailConfig,
+  saveMyMailConfig,
+  listMyRecetasSolicitudes,
+  updateMyRecetaSolicitudEstado,
 }

@@ -73,6 +73,7 @@ async function listTurnosByMedicoRange({ idMedico, desde, hasta }) {
   return query(
     `SELECT t.id_turno,
             DATE_FORMAT(t.fecha, '%d/%m/%Y') AS fecha,
+            DATE_FORMAT(t.fecha, '%Y-%m-%d') AS fecha_iso,
             DATE_FORMAT(t.hora, '%H:%i') AS hora,
             t.estado,
             t.id_clinica,
@@ -87,6 +88,39 @@ async function listTurnosByMedicoRange({ idMedico, desde, hasta }) {
   )
 }
 
+async function listHistorialByMedicoRange({ idMedico, desde, hasta }) {
+  return query(
+    `SELECT h.id_historial,
+            h.id_turno,
+            DATE_FORMAT(t.fecha, '%d/%m/%Y') AS fecha,
+            DATE_FORMAT(t.fecha, '%Y-%m-%d') AS fecha_iso,
+            DATE_FORMAT(t.hora, '%H:%i') AS hora,
+            h.estado_anterior,
+            h.estado_nuevo AS estado,
+            t.id_clinica,
+            c.nombre AS clinica_nombre,
+            p.nombre AS paciente_nombre,
+            p.apellido AS paciente_apellido,
+            h.modificado_por,
+            r.nombre AS actor_rol,
+            u.username AS actor_username,
+            u.email AS actor_email,
+            h.motivo,
+            DATE_FORMAT(h.creado_en, '%d/%m/%Y %H:%i') AS creado_en,
+            DATE_FORMAT(h.creado_en, '%Y-%m-%d %H:%i:%s') AS creado_en_iso
+     FROM turnos_historial h
+     INNER JOIN turnos t ON t.id_turno = h.id_turno
+     INNER JOIN pacientes p ON p.id_paciente = t.id_paciente
+     LEFT JOIN clinicas c ON c.id_clinica = t.id_clinica
+     LEFT JOIN usuarios u ON u.id_usuario = h.modificado_por
+     LEFT JOIN roles r ON r.id_rol = u.id_rol
+     WHERE t.id_medico = :idMedico
+       AND t.fecha BETWEEN :desde AND :hasta
+     ORDER BY h.creado_en DESC, h.id_historial DESC`,
+    { idMedico, desde, hasta }
+  )
+}
+
 async function findPacienteIdByUserId(idUsuario) {
   const rows = await query(
     `SELECT id_paciente
@@ -96,6 +130,17 @@ async function findPacienteIdByUserId(idUsuario) {
     { idUsuario }
   )
   return rows[0]?.id_paciente || null
+}
+
+async function findMedicoIdByUserId(idUsuario) {
+  const rows = await query(
+    `SELECT id_medico
+     FROM medicos
+     WHERE id_usuario = :idUsuario
+     LIMIT 1`,
+    { idUsuario }
+  )
+  return rows[0]?.id_medico || null
 }
 
 async function listTurnosByPaciente({ idPaciente, idMedico = null }) {
@@ -120,11 +165,37 @@ async function listTurnosByPaciente({ idPaciente, idMedico = null }) {
   )
 }
 
+async function medicoPermiteTurnos(idMedico) {
+  const rows = await query(
+    `SELECT COALESCE(mp.permite_turnos, 1) AS permite_turnos
+     FROM medicos m
+     LEFT JOIN (
+       SELECT m1.*
+       FROM membresias m1
+       INNER JOIN (
+         SELECT id_usuario, MAX(id_membresia) AS id_membresia
+         FROM membresias
+         GROUP BY id_usuario
+       ) latest ON latest.id_membresia = m1.id_membresia
+     ) ms ON ms.id_usuario = m.id_usuario
+     LEFT JOIN membresia_planes mp ON mp.id_plan = ms.id_plan OR LOWER(mp.codigo) = LOWER(ms.plan)
+     WHERE m.id_medico = :idMedico
+     LIMIT 1`,
+    { idMedico }
+  )
+
+  if (!rows[0]) return null
+  return Boolean(rows[0].permite_turnos)
+}
+
 module.exports = {
   insertTurno,
   findTurnoById,
   updateTurnoEstado,
   listTurnosByMedicoRange,
+  listHistorialByMedicoRange,
   findPacienteIdByUserId,
+  findMedicoIdByUserId,
   listTurnosByPaciente,
+  medicoPermiteTurnos,
 }

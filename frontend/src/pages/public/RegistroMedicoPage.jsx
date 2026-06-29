@@ -23,18 +23,18 @@ const ESPECIALIDADES = [
 
 const PLANES = [
   {
-    value: 'starter',
-    label: 'Starter',
+    value: 'inicial',
+    label: 'Inicial',
     description: 'Para profesionales independientes que recién arrancan.',
   },
   {
-    value: 'medium',
-    label: 'Medium',
+    value: 'medio',
+    label: 'Medio',
     description: 'Para quienes necesitan automatizaciones completas sin complicaciones.',
   },
   {
-    value: 'professional',
-    label: 'Professional',
+    value: 'profesional',
+    label: 'Profesional',
     description: 'Para profesionales y clínicas que necesitan más funcionalidades.',
   },
   {
@@ -62,7 +62,7 @@ export default function RegistroMedicoPage() {
     bio: '',
     password: '',
     confirmar: '',
-    plan: 'medium',
+    plan: 'medio',
     clinica_nombre: '',
     clinica_telefono: '',
     direccion: '',
