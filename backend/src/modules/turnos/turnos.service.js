@@ -1,5 +1,7 @@
 const HttpError = require('../../utils/httpError')
 const turnosRepo = require('./turnos.repository')
+const { assertMembershipNotExpiredByMedicoId } = require('../membresias/membresias.service')
+const { validateTextField } = require('../../utils/validators')
 
 const ESTADOS_VALIDOS = new Set([
   'pendiente',
@@ -36,6 +38,12 @@ async function crearTurno(input, authUser) {
     throw new HttpError(403, 'El medico seleccionado no tiene habilitado el modulo de turnos')
   }
 
+  // Validar que el médico tenga membresía activa
+  await assertMembershipNotExpiredByMedicoId(Number(input.id_medico), 'No es posible agendar turnos')
+
+  // Validar motivo_consulta si se proporciona
+  const validatedMotivo = validateTextField(input.motivo_consulta, 500, 'El motivo de consulta', false)
+
   try {
     const idTurno = await turnosRepo.insertTurno({
       idPaciente,
@@ -44,7 +52,7 @@ async function crearTurno(input, authUser) {
       idDisponibilidad: input.id_disponibilidad ? Number(input.id_disponibilidad) : null,
       fecha: input.fecha,
       hora: input.hora,
-      motivoConsulta: input.motivo_consulta || null,
+      motivoConsulta: validatedMotivo,
       duracionMinutos: input.duracion_minutos ? Number(input.duracion_minutos) : null,
       modificadoPor: authUser?.idUsuario || null,
     })
@@ -104,6 +112,11 @@ async function listarPorMedico({ idMedico, desde, hasta, requesterIdUsuario, req
     throw new HttpError(400, 'id_medico es obligatorio para este rol')
   }
 
+  // Si quien solicita es el médico, validar que tenga membresía activa
+  if (requesterRol === 'medico') {
+    await assertMembershipNotExpiredByMedicoId(resolvedIdMedico, 'No es posible ver los turnos')
+  }
+
   return turnosRepo.listTurnosByMedicoRange({ idMedico: resolvedIdMedico, desde, hasta })
 }
 
@@ -123,6 +136,11 @@ async function listarHistorialPorMedico({ idMedico, desde, hasta, requesterIdUsu
 
   if (!resolvedIdMedico) {
     throw new HttpError(400, 'id_medico es obligatorio para este rol')
+  }
+
+  // Si quien solicita es el médico, validar que tenga membresía activa
+  if (requesterRol === 'medico') {
+    await assertMembershipNotExpiredByMedicoId(resolvedIdMedico, 'No es posible ver el historial de turnos')
   }
 
   return turnosRepo.listHistorialByMedicoRange({ idMedico: resolvedIdMedico, desde, hasta })

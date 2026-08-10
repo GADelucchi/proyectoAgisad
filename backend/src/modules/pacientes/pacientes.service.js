@@ -14,6 +14,8 @@ const {
   insertPacienteTycAceptacion,
 } = require('./pacientes.repository')
 const { sendRecetaSolicitudEmail, sendPacienteMensajeEmail } = require('../../utils/mailer')
+const { assertMembershipNotExpiredByMedicoId } = require('../membresias/membresias.service')
+const { validateTextField } = require('../../utils/validators')
 
 /**
  * Lista pacientes del médico (o asistente actuando en nombre de un médico).
@@ -99,15 +101,19 @@ async function solicitarReceta({ idMedico, tipo, items, requesterIdUsuario, requ
   }
 
   const normalizedItems = items
-    .map((item) => ({
-      medicamento: String(item?.medicamento || '').trim(),
-      dosis: String(item?.dosis || '').trim(),
-    }))
+    .map((item) => {
+      const medicamento = validateTextField(item?.medicamento, 100, 'El nombre del medicamento', true)
+      const dosis = validateTextField(item?.dosis, 50, 'La dosis', false)
+      return { medicamento, dosis }
+    })
     .filter((item) => item.medicamento)
 
   if (normalizedItems.length === 0) {
-    throw new HttpError(400, 'Debes ingresar el nombre del medicamento')
+    throw new HttpError(400, 'Debes ingresar al menos un medicamento válido')
   }
+
+  // Validar que el médico tenga membresía activa
+  await assertMembershipNotExpiredByMedicoId(targetMedico, 'No es posible solicitar recetas')
 
   const paciente = await findPacienteByUserId(requesterIdUsuario)
   if (!paciente) {
@@ -153,11 +159,12 @@ async function solicitarMensaje({ idMedico, asunto, mensaje, requesterIdUsuario,
     throw new HttpError(400, 'id_medico invalido')
   }
 
-  const asuntoClean = String(asunto || '').trim()
-  const mensajeClean = String(mensaje || '').trim()
-  if (!asuntoClean) throw new HttpError(400, 'El asunto es obligatorio')
-  if (!mensajeClean) throw new HttpError(400, 'El mensaje es obligatorio')
-  if (asuntoClean.length > 150) throw new HttpError(400, 'El asunto no puede superar 150 caracteres')
+  // Validar asunto y mensaje
+  const asuntoClean = validateTextField(asunto, 150, 'El asunto', true)
+  const mensajeClean = validateTextField(mensaje, 2000, 'El mensaje', true)
+
+  // Validar que el médico tenga membresía activa
+  await assertMembershipNotExpiredByMedicoId(targetMedico, 'No es posible enviar mensajes')
 
   const paciente = await findPacienteByUserId(requesterIdUsuario)
   if (!paciente) {

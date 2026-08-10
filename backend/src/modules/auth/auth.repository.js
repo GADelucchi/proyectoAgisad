@@ -11,12 +11,16 @@ async function findUserByEmail(email) {
        u.activo,
        r.nombre AS rol,
        ms.id_membresia,
+       ms.es_trial,
+       ms.fecha_inicio_trial,
+       ms.fecha_fin_trial,
       COALESCE(mp_fallback.codigo, mp.codigo, ms.plan) AS plan_codigo,
        ms.estado AS membresia_estado,
        ms.pagado_hasta AS membresia_pagado_hasta,
        CASE
          WHEN ms.id_membresia IS NULL THEN 0
-         WHEN ms.estado = 'activa' AND (ms.pagado_hasta IS NULL OR ms.pagado_hasta >= CURDATE()) THEN 1
+         WHEN ms.estado = 'activa' AND ms.es_trial = 1 AND (ms.fecha_fin_trial IS NULL OR ms.fecha_fin_trial >= CURDATE()) THEN 1
+         WHEN ms.estado = 'activa' AND ms.es_trial = 0 AND (ms.pagado_hasta IS NULL OR ms.pagado_hasta >= CURDATE()) THEN 1
          ELSE 0
        END AS membresia_activa_vigente,
       COALESCE(mp_fallback.nombre, mp.nombre, ms.plan) AS plan_nombre,
@@ -67,12 +71,16 @@ async function findUserById(idUsuario) {
        u.activo,
        r.nombre AS rol,
        ms.id_membresia,
+       ms.es_trial,
+       ms.fecha_inicio_trial,
+       ms.fecha_fin_trial,
       COALESCE(mp_fallback.codigo, mp.codigo, ms.plan) AS plan_codigo,
        ms.estado AS membresia_estado,
        ms.pagado_hasta AS membresia_pagado_hasta,
        CASE
          WHEN ms.id_membresia IS NULL THEN 0
-         WHEN ms.estado = 'activa' AND (ms.pagado_hasta IS NULL OR ms.pagado_hasta >= CURDATE()) THEN 1
+         WHEN ms.estado = 'activa' AND ms.es_trial = 1 AND (ms.fecha_fin_trial IS NULL OR ms.fecha_fin_trial >= CURDATE()) THEN 1
+         WHEN ms.estado = 'activa' AND ms.es_trial = 0 AND (ms.pagado_hasta IS NULL OR ms.pagado_hasta >= CURDATE()) THEN 1
          ELSE 0
        END AS membresia_activa_vigente,
       COALESCE(mp_fallback.nombre, mp.nombre, ms.plan) AS plan_nombre,

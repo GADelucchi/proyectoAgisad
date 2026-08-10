@@ -11,6 +11,15 @@ const {
   updateUltimoLogin,
 } = require('./auth.repository')
 const { normalizePlanCode } = require('../membresias/membresias.service')
+const {
+  validateEmail,
+  validatePassword,
+  validateDNI,
+  validatePhoneNumber,
+  validateName,
+  validateMatricula,
+  validateTextField,
+} = require('../../utils/validators')
 
 function buildTokenPayload(user) {
   return {
@@ -24,6 +33,8 @@ function buildTokenPayload(user) {
 }
 
 function buildUserPayload(user) {
+  const membresia_vencida = user.rol !== 'paciente' && user.id_membresia && !Number(user.membresia_activa_vigente)
+  
   return {
     ...buildTokenPayload(user),
     membresia: {
@@ -32,7 +43,11 @@ function buildUserPayload(user) {
       plan_nombre: user.plan_nombre || null,
       estado: user.membresia_estado || null,
       pagado_hasta: user.membresia_pagado_hasta || null,
+      es_trial: Boolean(user.es_trial),
+      fecha_inicio_trial: user.fecha_inicio_trial || null,
+      fecha_fin_trial: user.fecha_fin_trial || null,
       activa_vigente: Boolean(user.membresia_activa_vigente),
+      membresia_vencida: membresia_vencida,
       permite_turnos: Boolean(user.permite_turnos),
       permite_asistentes: Boolean(user.permite_asistentes),
       limite_asistentes:
@@ -277,9 +292,12 @@ async function createMembershipForUser(conn, { userId, plan }) {
           fecha_fin,
           monto_mensual,
           pagado_hasta,
+          fecha_inicio_trial,
+          fecha_fin_trial,
+          es_trial,
           auto_renueva
-        ) VALUES (?, ?, ?, 'activa', CURDATE(), DATE_ADD(CURDATE(), INTERVAL ? MONTH), ?, DATE_ADD(CURDATE(), INTERVAL ? MONTH), 0)`,
-        [userId, resolvedPlan.idPlan, planCode, vigenciaMeses, precioMensual, vigenciaMeses]
+        ) VALUES (?, ?, ?, 'activa', CURDATE(), DATE_ADD(CURDATE(), INTERVAL 30 DAY), ?, DATE_ADD(CURDATE(), INTERVAL 30 DAY), CURDATE(), DATE_ADD(CURDATE(), INTERVAL 30 DAY), 1, 0)`,
+        [userId, resolvedPlan.idPlan, planCode, precioMensual]
       )
       return
     }
@@ -293,9 +311,12 @@ async function createMembershipForUser(conn, { userId, plan }) {
         fecha_fin,
         monto_mensual,
         pagado_hasta,
+        fecha_inicio_trial,
+        fecha_fin_trial,
+        es_trial,
         auto_renueva
-      ) VALUES (?, ?, 'activa', CURDATE(), DATE_ADD(CURDATE(), INTERVAL ? MONTH), ?, DATE_ADD(CURDATE(), INTERVAL ? MONTH), 0)`,
-      [userId, planCode, vigenciaMeses, precioMensual, vigenciaMeses]
+      ) VALUES (?, ?, 'activa', CURDATE(), DATE_ADD(CURDATE(), INTERVAL 30 DAY), ?, DATE_ADD(CURDATE(), INTERVAL 30 DAY), CURDATE(), DATE_ADD(CURDATE(), INTERVAL 30 DAY), 1, 0)`,
+      [userId, planCode, precioMensual]
     )
   } catch (err) {
     if (err?.code !== 'ER_BAD_FIELD_ERROR') throw err
@@ -314,25 +335,22 @@ async function createMembershipForUser(conn, { userId, plan }) {
 }
 
 async function createBaseUser(conn, { roleName, email, password, username }) {
+  // Validar email y password
+  const validatedEmail = validateEmail(email)
+  const validatedPassword = validatePassword(password)
+  
   const roleId = await findRoleIdByName(roleName)
   if (!roleId) {
     throw new HttpError(500, `No existe el rol ${roleName}. Cargar datos base primero`)
   }
 
-  if (!isStrongPassword(password)) {
-    throw new HttpError(
-      400,
-      'La contraseña debe tener al menos 8 caracteres e incluir letras y números'
-    )
-  }
-
-  const hashedPassword = await bcrypt.hash(password, 10)
-  const resolvedUsername = await ensureUsername(email, username)
+  const hashedPassword = await bcrypt.hash(validatedPassword, 10)
+  const resolvedUsername = await ensureUsername(validatedEmail, username)
 
   const [userResult] = await conn.execute(
     `INSERT INTO usuarios (id_rol, username, email, password_hash, email_verificado, activo)
      VALUES (?, ?, ?, ?, 0, 1)`,
-    [roleId, resolvedUsername, email, hashedPassword]
+    [roleId, resolvedUsername, validatedEmail, hashedPassword]
   )
 
   return { userId: userResult.insertId, username: resolvedUsername }
@@ -382,6 +400,12 @@ async function registerPaciente(input) {
     }
   }
 
+  // Validar inputs específicos
+  const validatedDNI = validateDNI(input.dni)
+  const validatedNombre = validateName(input.nombre, 'El nombre')
+  const validatedApellido = validateName(input.apellido, 'El apellido')
+  const validatedTelefono = validatePhoneNumber(input.telefono, false)
+
   const conn = await pool.getConnection()
 
   try {
@@ -405,10 +429,10 @@ async function registerPaciente(input) {
       `,
       [
         userId,
-        input.dni,
-        input.nombre,
-        input.apellido,
-        input.telefono || null,
+        validatedDNI,
+        validatedNombre,
+        validatedApellido,
+        validatedTelefono,
         input.fecha_nac || null,
         idObraSocial,
         input.nro_obra_social || null,
@@ -446,6 +470,14 @@ async function registerMedico(input) {
     }
   }
 
+  // Validar inputs específicos
+  const validatedDNI = validateDNI(input.dni)
+  const validatedNombre = validateName(input.nombre, 'El nombre')
+  const validatedApellido = validateName(input.apellido, 'El apellido')
+  const validatedMatricula = validateMatricula(input.matricula)
+  const validatedTelefono = validatePhoneNumber(input.telefono, false)
+  const validatedBio = validateTextField(input.bio, 500, 'La biografía', false)
+
   const conn = await pool.getConnection()
 
   try {
@@ -473,12 +505,12 @@ async function registerMedico(input) {
           userId,
           idEspecialidad,
           idCiudad,
-          input.matricula,
-          input.nombre,
-          input.apellido,
-          input.dni,
-          input.telefono || null,
-          input.bio || null,
+          validatedMatricula,
+          validatedNombre,
+          validatedApellido,
+          validatedDNI,
+          validatedTelefono,
+          validatedBio,
           input.foto_url || null,
           input.acepta_tyc ? 1 : 0,
           input.acepta_tyc ? new Date() : null,
@@ -491,14 +523,14 @@ async function registerMedico(input) {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
         [
           userId,
-          input.nombre,
-          input.apellido,
-          input.dni,
-          input.telefono || null,
-          input.direccion || null,
+          validatedNombre,
+          validatedApellido,
+          validatedDNI,
+          validatedTelefono,
+          validateTextField(input.direccion, 200, 'La dirección', false),
           idCiudad,
-          input.matricula,
-          input.bio || null,
+          validatedMatricula,
+          validatedBio,
           input.foto_url || null,
           input.acepta_tyc ? 1 : 0,
           input.acepta_tyc ? new Date() : null,
@@ -545,6 +577,13 @@ async function registerGerente(input) {
     }
   }
 
+  // Validar inputs específicos
+  const validatedNombre = validateName(input.nombre, 'El nombre')
+  const validatedApellido = validateName(input.apellido, 'El apellido')
+  const validatedTelefono = validatePhoneNumber(input.telefono, false)
+  const validatedClinicaNombre = validateTextField(input.clinica_nombre, 100, 'El nombre de la clínica', true)
+  const validatedDireccion = validateTextField(input.direccion, 200, 'La dirección', true)
+
   const conn = await pool.getConnection()
 
   try {
@@ -562,13 +601,13 @@ async function registerGerente(input) {
     const [gerenteResult] = await conn.execute(
       `INSERT INTO gerentes (id_usuario, nombre, apellido, telefono)
        VALUES (?, ?, ?, ?)` ,
-      [userId, input.nombre, input.apellido, input.telefono || null]
+      [userId, validatedNombre, validatedApellido, validatedTelefono]
     )
 
     const [clinicaResult] = await conn.execute(
       `INSERT INTO clinicas (nombre, id_ciudad, direccion, telefono)
        VALUES (?, ?, ?, ?)` ,
-      [input.clinica_nombre, idCiudad, input.direccion, input.clinica_telefono || input.telefono || null]
+      [validatedClinicaNombre, idCiudad, validatedDireccion, validatePhoneNumber(input.clinica_telefono, false) || validatedTelefono]
     )
 
     await conn.execute(

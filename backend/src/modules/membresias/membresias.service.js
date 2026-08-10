@@ -38,6 +38,9 @@ async function getCurrentMembershipByUserId(idUsuario) {
       m.pagado_hasta,
       m.monto_mensual,
       m.auto_renueva,
+      m.es_trial,
+      m.fecha_inicio_trial,
+      m.fecha_fin_trial,
       COALESCE(mp_fallback.id_plan, mp.id_plan) AS plan_id_resuelto,
       COALESCE(mp_fallback.codigo, mp.codigo, m.plan) AS plan_codigo,
       COALESCE(mp_fallback.nombre, mp.nombre, m.plan) AS plan_nombre,
@@ -46,7 +49,8 @@ async function getCurrentMembershipByUserId(idUsuario) {
       COALESCE(mp_fallback.permite_asistentes, mp.permite_asistentes, 1) AS permite_asistentes,
       COALESCE(mp_fallback.limite_asistentes, mp.limite_asistentes) AS limite_asistentes,
       CASE
-        WHEN m.estado = 'activa' AND (m.pagado_hasta IS NULL OR m.pagado_hasta >= CURDATE()) THEN 1
+        WHEN m.estado = 'activa' AND m.es_trial = 1 AND (m.fecha_fin_trial IS NULL OR m.fecha_fin_trial >= CURDATE()) THEN 1
+        WHEN m.estado = 'activa' AND m.es_trial = 0 AND (m.pagado_hasta IS NULL OR m.pagado_hasta >= CURDATE()) THEN 1
         ELSE 0
       END AS activa_vigente
     FROM membresias m
@@ -100,10 +104,31 @@ async function assertMedicoFeatureByMedicoId({ idMedico, feature, denyMessage })
   return assertUserFeatureByUserId({ idUsuario, feature, denyMessage })
 }
 
+async function assertMembershipNotExpired(idUsuario, actionMessage = 'Esta acción') {
+  const membership = await getCurrentMembershipByUserId(idUsuario)
+
+  if (!membership || !Number(membership.activa_vigente)) {
+    throw new HttpError(402, `${actionMessage} no está disponible porque tu membresía está vencida. Renová tu suscripción para continuar.`)
+  }
+
+  return membership
+}
+
+async function assertMembershipNotExpiredByMedicoId(idMedico, actionMessage = 'Esta acción') {
+  const idUsuario = await findUserIdByMedicoId(idMedico)
+  if (!idUsuario) {
+    throw new HttpError(404, 'Medico no encontrado')
+  }
+
+  return assertMembershipNotExpired(idUsuario, actionMessage)
+}
+
 module.exports = {
   normalizePlanCode,
   getCurrentMembershipByUserId,
   findUserIdByMedicoId,
   assertUserFeatureByUserId,
   assertMedicoFeatureByMedicoId,
+  assertMembershipNotExpired,
+  assertMembershipNotExpiredByMedicoId,
 }
