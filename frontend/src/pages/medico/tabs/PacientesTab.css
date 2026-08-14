@@ -33,6 +33,32 @@
   gap: 0.6rem;
 }
 
+.paciente-agendar {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.paciente-agendar h4 {
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.paciente-agendar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.9rem;
+}
+
+.paciente-turno-msg {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
 @media (max-width: 760px) {
   .pacientes-header,
   .paciente-alta-actions {

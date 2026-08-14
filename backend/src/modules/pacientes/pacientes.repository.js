@@ -14,10 +14,12 @@ async function listPacientesByMedico(idMedico, search) {
       p.apellido,
       p.telefono,
       DATE_FORMAT(p.fecha_nac, '%d/%m/%Y') AS fecha_nac,
+      os.nombre AS obra_social,
       u.email
     FROM pacientes p
     JOIN usuarios   u ON u.id_usuario = p.id_usuario
     JOIN turnos     t ON t.id_paciente = p.id_paciente
+    LEFT JOIN obras_sociales os ON os.id_obra_social = p.id_obra_social
     WHERE t.id_medico = :idMedico
   `
   const params = { idMedico }
