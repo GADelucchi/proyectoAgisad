@@ -7,10 +7,6 @@ import { turnosApi } from '../../../services/turnos.api'
 import { formatDateDdMmYyyy, formatTime24h } from '../../../utils/dateFormat'
 import './WizardTurnoPage.css'
 
-const TIPOS_CONSULTA_POR_DEFECTO = [
-  { id: 'seguimiento', label: 'Seguimiento', duracion: 30 },
-  { id: 'primera', label: 'Primera vez', duracion: 60 },
-]
 const STEPS = ['Consultorio', 'Tipo de consulta', 'Fecha y horario', 'Confirmacion']
 const MONTH_NAMES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 const DOW_LABELS = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab']
@@ -76,7 +72,7 @@ export default function WizardTurnoPage() {
   const [loadingMonth, setLoadingMonth] = useState(false)
   const [sel, setSel] = useState({ consultorio: null, tipo: null, fecha: null, horario: null, idDisponibilidad: null })
   const [permiteTurnos, setPermiteTurnos] = useState(true)
-  const [tiposConsulta, setTiposConsulta] = useState(TIPOS_CONSULTA_POR_DEFECTO)
+  const [tiposConsulta, setTiposConsulta] = useState([])
 
   useEffect(() => {
     let cancelled = false
@@ -105,12 +101,12 @@ export default function WizardTurnoPage() {
               }))
               .filter((tipo) => tipo.label && tipo.duracion > 0)
           : []
-        setTiposConsulta(tipos.length > 0 ? tipos : TIPOS_CONSULTA_POR_DEFECTO)
+        setTiposConsulta(tipos)
       } catch {
         if (!cancelled) {
           setConsultorios([])
           setPermiteTurnos(true)
-          setTiposConsulta(TIPOS_CONSULTA_POR_DEFECTO)
+          setTiposConsulta([])
         }
       }
     }

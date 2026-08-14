@@ -545,11 +545,24 @@ async function registerMedico(input) {
       plan: input.plan,
     })
 
+    // Crear tipos de consulta por defecto para el médico
+    const idMedico = medicoResult.insertId
+    await conn.execute(
+      `INSERT INTO medico_tipos_turno (id_medico, nombre, duracion_minutos, activo)
+       VALUES (?, ?, ?, 1)`,
+      [idMedico, 'Seguimiento', 30]
+    )
+    await conn.execute(
+      `INSERT INTO medico_tipos_turno (id_medico, nombre, duracion_minutos, activo)
+       VALUES (?, ?, ?, 1)`,
+      [idMedico, 'Primera vez', 60]
+    )
+
     await conn.commit()
 
     return {
       id_usuario: userId,
-      id_medico: medicoResult.insertId,
+      id_medico: idMedico,
       username,
       email: input.email,
       rol: 'medico',
