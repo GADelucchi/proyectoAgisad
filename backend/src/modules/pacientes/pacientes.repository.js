@@ -1,13 +1,14 @@
 const { query } = require('../../db/query')
 
 /**
- * Lista los pacientes que tuvieron al menos un turno con el médico dado.
+ * Lista los pacientes vinculados al médico: los que tuvieron algún turno
+ * y los cargados manualmente desde el panel.
  */
 async function listPacientesByMedico(idMedico, search) {
   const like = search ? `%${search}%` : null
 
   let sql = `
-    SELECT DISTINCT
+    SELECT
       p.id_paciente,
       p.dni,
       p.nombre,
@@ -18,9 +19,19 @@ async function listPacientesByMedico(idMedico, search) {
       u.email
     FROM pacientes p
     JOIN usuarios   u ON u.id_usuario = p.id_usuario
-    JOIN turnos     t ON t.id_paciente = p.id_paciente
     LEFT JOIN obras_sociales os ON os.id_obra_social = p.id_obra_social
-    WHERE t.id_medico = :idMedico
+    WHERE (
+      EXISTS (
+        SELECT 1 FROM turnos t
+        WHERE t.id_paciente = p.id_paciente AND t.id_medico = :idMedico
+      )
+      OR EXISTS (
+        SELECT 1 FROM paciente_vinculos pv
+        WHERE pv.id_paciente = p.id_paciente
+          AND pv.id_medico = :idMedico
+          AND pv.estado = 'activo'
+      )
+    )
   `
   const params = { idMedico }
 
@@ -273,6 +284,56 @@ async function insertPacienteTycAceptacion({ idPaciente, idMedico, idTyc, ip }) 
   )
 }
 
+async function findPacienteByDni(dni) {
+  const rows = await query(
+    `SELECT id_paciente, id_usuario, dni, nombre, apellido
+     FROM pacientes
+     WHERE dni = :dni
+     LIMIT 1`,
+    { dni }
+  )
+  return rows[0] || null
+}
+
+async function findPrimeraClinicaByMedico(idMedico) {
+  const rows = await query(
+    `SELECT mc.id_clinica
+     FROM medico_clinicas mc
+     INNER JOIN clinicas c ON c.id_clinica = mc.id_clinica
+     WHERE mc.id_medico = :idMedico
+       AND mc.activo = 1
+     ORDER BY c.nombre
+     LIMIT 1`,
+    { idMedico }
+  )
+  return rows[0]?.id_clinica || null
+}
+
+async function medicoTieneClinica({ idMedico, idClinica }) {
+  const rows = await query(
+    `SELECT 1 AS ok
+     FROM medico_clinicas
+     WHERE id_medico = :idMedico
+       AND id_clinica = :idClinica
+       AND activo = 1
+     LIMIT 1`,
+    { idMedico, idClinica }
+  )
+  return Boolean(rows[0])
+}
+
+/**
+ * Crea o reactiva el vínculo paciente ↔ médico para que aparezca en su listado.
+ */
+async function upsertPacienteVinculo({ idPaciente, idMedico, idClinica, origen = 'manual' }) {
+  await query(
+    `INSERT INTO paciente_vinculos (id_paciente, id_medico, id_clinica, origen, estado)
+     VALUES (:idPaciente, :idMedico, :idClinica, :origen, 'activo')
+     ON DUPLICATE KEY UPDATE estado = 'activo'`,
+    { idPaciente, idMedico, idClinica, origen }
+  )
+}
+
 module.exports = {
   listPacientesByMedico,
   findPacienteById,
@@ -290,4 +351,8 @@ module.exports = {
   findActiveTycByMedico,
   hasPacienteAcceptedTyc,
   insertPacienteTycAceptacion,
+  findPacienteByDni,
+  findPrimeraClinicaByMedico,
+  medicoTieneClinica,
+  upsertPacienteVinculo,
 }

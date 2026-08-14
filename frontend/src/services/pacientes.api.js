@@ -12,6 +12,7 @@ export const pacientesApi = {
     const suffix = qs.toString() ? `?${qs.toString()}` : ''
     return api.get(`/pacientes${suffix}`)
   },
+  crear: (payload) => api.post('/pacientes', payload),
   solicitarReceta: (idMedico, payload) => api.post(`/pacientes/medicos/${idMedico}/recetas`, payload),
   enviarMensaje: (idMedico, payload) => api.post(`/pacientes/medicos/${idMedico}/mensajes`, payload),
   getMiPerfil: () => api.get('/pacientes/me'),

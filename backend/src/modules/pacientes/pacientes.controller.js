@@ -1,5 +1,6 @@
 const {
   listPacientes,
+  createPacienteManual,
   getPaciente,
   patchPaciente,
   getMiPerfil,
@@ -23,6 +24,19 @@ async function list(req, res, next) {
       requesterRol: req.user.rol,
     })
     res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function create(req, res, next) {
+  try {
+    const data = await createPacienteManual({
+      fields: req.body,
+      requesterIdUsuario: req.user.idUsuario,
+      requesterRol: req.user.rol,
+    })
+    res.status(data.ya_existia ? 200 : 201).json(data)
   } catch (err) {
     next(err)
   }
@@ -163,6 +177,7 @@ async function acceptTyc(req, res, next) {
 
 module.exports = {
   list,
+  create,
   getOne,
   patch,
   getMe,

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Search, RefreshCw, CalendarPlus } from 'lucide-react'
+import { Search, RefreshCw, CalendarPlus, UserPlus } from 'lucide-react'
 import Button from '../../../components/ui/Button'
 import { useAuth } from '../../../context/AuthContext'
 import { medicosApi } from '../../../services/medicos.api'
@@ -19,6 +19,17 @@ function nombreCompleto(paciente) {
   return `${paciente?.apellido || ''} ${paciente?.nombre || ''}`.trim() || 'Paciente'
 }
 
+const FORM_ALTA_VACIO = {
+  dni: '',
+  nombre: '',
+  apellido: '',
+  email: '',
+  telefono: '',
+  fecha_nac: '',
+  id_obra_social: '',
+  nro_obra_social: '',
+}
+
 export default function PacientesTab() {
   const { usuario } = useAuth()
   const [query, setQuery] = useState('')
@@ -34,6 +45,12 @@ export default function PacientesTab() {
   const [cargandoSlots, setCargandoSlots] = useState(false)
   const [guardandoTurno, setGuardandoTurno] = useState(false)
   const [mensajeTurno, setMensajeTurno] = useState('')
+
+  const [mostrarAlta, setMostrarAlta] = useState(false)
+  const [formAlta, setFormAlta] = useState(FORM_ALTA_VACIO)
+  const [obrasSociales, setObrasSociales] = useState([])
+  const [guardandoAlta, setGuardandoAlta] = useState(false)
+  const [mensajeAlta, setMensajeAlta] = useState('')
 
   async function load() {
     if (!isMedico) return
@@ -59,9 +76,11 @@ export default function PacientesTab() {
     Promise.all([
       medicosApi.listMyClinicas().catch(() => []),
       medicosApi.getMyTurnosConfig().catch(() => null),
-    ]).then(([clinicasRows, config]) => {
+      pacientesApi.listarObrasSociales().catch(() => []),
+    ]).then(([clinicasRows, config, obrasRows]) => {
       if (cancelled) return
       setClinicas(Array.isArray(clinicasRows) ? clinicasRows : [])
+      setObrasSociales(Array.isArray(obrasRows) ? obrasRows : [])
       const valor = Number(config?.duracion_turno_estandar)
       if (Number.isFinite(valor) && valor > 0) setDuracionEstandar(valor)
     })
@@ -94,6 +113,7 @@ export default function PacientesTab() {
 
   function abrirAgendar(paciente) {
     setMensajeTurno('')
+    setMostrarAlta(false)
     setAgendarPara(paciente)
     setSlots([])
     setFormTurno({
@@ -102,6 +122,43 @@ export default function PacientesTab() {
       hora: '',
       motivo: '',
     })
+  }
+
+  function abrirAlta() {
+    setMensajeAlta('')
+    setFormAlta(FORM_ALTA_VACIO)
+    setAgendarPara(null)
+    setMostrarAlta(true)
+  }
+
+  async function guardarPaciente(event) {
+    event.preventDefault()
+    setGuardandoAlta(true)
+    setMensajeAlta('')
+    try {
+      const creado = await pacientesApi.crear({
+        dni: formAlta.dni.trim(),
+        nombre: formAlta.nombre.trim(),
+        apellido: formAlta.apellido.trim(),
+        email: formAlta.email.trim() || null,
+        telefono: formAlta.telefono.trim() || null,
+        fecha_nac: formAlta.fecha_nac || null,
+        id_obra_social: formAlta.id_obra_social || null,
+        nro_obra_social: formAlta.nro_obra_social.trim() || null,
+      })
+      setMostrarAlta(false)
+      setFormAlta(FORM_ALTA_VACIO)
+      setMensajeAlta(
+        creado?.ya_existia
+          ? `${nombreCompleto(creado)} ya estaba registrado en el sistema y se agregó a tu listado.`
+          : `${nombreCompleto(creado)} se agregó a tu listado.`
+      )
+      await load()
+    } catch (err) {
+      setMensajeAlta(err?.message || 'No se pudo agregar el paciente.')
+    } finally {
+      setGuardandoAlta(false)
+    }
   }
 
   async function confirmarTurno(event) {
@@ -138,11 +195,16 @@ export default function PacientesTab() {
       <div className="pacientes-header">
         <div>
           <h3>Base de pacientes</h3>
-          <p>Listado obtenido desde turnos registrados en la base de datos.</p>
+          <p>Pacientes con turnos registrados y los que agregaste manualmente.</p>
         </div>
-        <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
-          <RefreshCw size={14} /> {loading ? 'Actualizando...' : 'Actualizar'}
-        </Button>
+        <div className="pacientes-header-acciones">
+          <Button size="sm" onClick={abrirAlta}>
+            <UserPlus size={14} /> Nuevo paciente
+          </Button>
+          <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
+            <RefreshCw size={14} /> {loading ? 'Actualizando...' : 'Actualizar'}
+          </Button>
+        </div>
       </div>
 
       <div className="pacientes-search surface-raised">
@@ -154,6 +216,125 @@ export default function PacientesTab() {
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
+
+      {mostrarAlta && (
+        <form className="paciente-alta-form surface-raised" onSubmit={guardarPaciente}>
+          <h4>Nuevo paciente</h4>
+
+          <div className="paciente-agendar-grid">
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="alta-dni">DNI</label>
+              <input
+                id="alta-dni"
+                className="form-input"
+                inputMode="numeric"
+                value={formAlta.dni}
+                onChange={(e) => setFormAlta({ ...formAlta, dni: e.target.value })}
+                required
+              />
+            </div>
+
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="alta-apellido">Apellido</label>
+              <input
+                id="alta-apellido"
+                className="form-input"
+                value={formAlta.apellido}
+                onChange={(e) => setFormAlta({ ...formAlta, apellido: e.target.value })}
+                required
+              />
+            </div>
+
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="alta-nombre">Nombre</label>
+              <input
+                id="alta-nombre"
+                className="form-input"
+                value={formAlta.nombre}
+                onChange={(e) => setFormAlta({ ...formAlta, nombre: e.target.value })}
+                required
+              />
+            </div>
+
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="alta-email">Email (opcional)</label>
+              <input
+                id="alta-email"
+                type="email"
+                className="form-input"
+                value={formAlta.email}
+                onChange={(e) => setFormAlta({ ...formAlta, email: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="alta-telefono">Teléfono (opcional)</label>
+              <input
+                id="alta-telefono"
+                className="form-input"
+                value={formAlta.telefono}
+                onChange={(e) => setFormAlta({ ...formAlta, telefono: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="alta-nacimiento">Fecha de nacimiento (opcional)</label>
+              <input
+                id="alta-nacimiento"
+                type="date"
+                className="form-input"
+                max={toIsoDate(new Date())}
+                value={formAlta.fecha_nac}
+                onChange={(e) => setFormAlta({ ...formAlta, fecha_nac: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="alta-obra-social">Obra social</label>
+              <select
+                id="alta-obra-social"
+                className="form-select"
+                value={formAlta.id_obra_social}
+                onChange={(e) => setFormAlta({
+                  ...formAlta,
+                  id_obra_social: e.target.value,
+                  nro_obra_social: e.target.value ? formAlta.nro_obra_social : '',
+                })}
+              >
+                <option value="">Particular / Sin cobertura</option>
+                {obrasSociales.map((os) => (
+                  <option key={os.id_obra_social} value={String(os.id_obra_social)}>{os.nombre}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="alta-afiliado">N° de afiliado</label>
+              <input
+                id="alta-afiliado"
+                className="form-input"
+                value={formAlta.nro_obra_social}
+                disabled={!formAlta.id_obra_social}
+                onChange={(e) => setFormAlta({ ...formAlta, nro_obra_social: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <p className="paciente-help">
+            Si cargás el email, el paciente puede activar su cuenta desde &quot;Olvidé mi contraseña&quot; y ver sus turnos.
+            Si el DNI ya existe en el sistema, solo se agrega a tu listado.
+          </p>
+
+          <div className="paciente-alta-actions">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setMostrarAlta(false)}>Cancelar</Button>
+            <Button type="submit" size="sm" disabled={guardandoAlta}>
+              {guardandoAlta ? 'Guardando...' : 'Guardar paciente'}
+            </Button>
+          </div>
+        </form>
+      )}
+
+      {mensajeAlta && <p className="paciente-turno-msg">{mensajeAlta}</p>}
 
       {agendarPara && (
         <form className="paciente-agendar surface-raised" onSubmit={confirmarTurno}>

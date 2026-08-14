@@ -8,6 +8,13 @@
 }
 .pacientes-header h3 { font-family: var(--font-sans); font-size: 1rem; font-weight: 700; margin-bottom: 2px; }
 
+.pacientes-header-acciones {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
 .pacientes-search {
   display: flex;
   align-items: center;
@@ -20,6 +27,13 @@
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
+}
+
+.paciente-alta-form h4 {
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0;
 }
 
 .paciente-help {

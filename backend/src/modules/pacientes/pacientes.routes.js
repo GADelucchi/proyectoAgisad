@@ -12,6 +12,14 @@ router.get(
   ctrl.list
 )
 
+// POST /api/pacientes -> alta manual desde el panel del médico
+router.post(
+  '/',
+  requireAuth,
+  requireRoles('medico', 'asistente'),
+  ctrl.create
+)
+
 // Panel del paciente autenticado. Declaradas antes de /:id para que no las capture.
 router.get('/me', requireAuth, requireRoles('paciente'), ctrl.getMe)
 router.patch('/me', requireAuth, requireRoles('paciente'), ctrl.patchMe)

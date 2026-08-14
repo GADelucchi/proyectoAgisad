@@ -1,3 +1,4 @@
+const crypto = require('crypto')
 const HttpError = require('../../utils/httpError')
 const {
   listPacientesByMedico,
@@ -16,20 +17,27 @@ const {
   findActiveTycByMedico,
   hasPacienteAcceptedTyc,
   insertPacienteTycAceptacion,
+  findPacienteByDni,
+  findPrimeraClinicaByMedico,
+  medicoTieneClinica,
+  upsertPacienteVinculo,
 } = require('./pacientes.repository')
 const { sendRecetaSolicitudEmail, sendPacienteMensajeEmail } = require('../../utils/mailer')
 const { assertMembershipNotExpiredByMedicoId } = require('../membresias/membresias.service')
+const { registerPaciente } = require('../auth/auth.service')
 const {
   validateTextField,
   validatePhoneNumber,
   validateDate,
+  validateDNI,
+  validateName,
+  validateEmail,
 } = require('../../utils/validators')
 
 /**
- * Lista pacientes del médico (o asistente actuando en nombre de un médico).
- * Requiere id_medico en query string.
+ * Resuelve sobre qué médico opera quien hace el pedido y valida los permisos.
  */
-async function listPacientes({ idMedico, search, requesterIdUsuario, requesterRol }) {
+async function resolveMedicoDestino({ idMedico, requesterIdUsuario, requesterRol }) {
   let target = idMedico ? Number(idMedico) : null
 
   if (!target && requesterRol === 'medico') {
@@ -55,7 +63,83 @@ async function listPacientes({ idMedico, search, requesterIdUsuario, requesterRo
     }
   }
 
+  return target
+}
+
+/**
+ * Lista pacientes del médico (o asistente actuando en nombre de un médico).
+ * Requiere id_medico en query string.
+ */
+async function listPacientes({ idMedico, search, requesterIdUsuario, requesterRol }) {
+  const target = await resolveMedicoDestino({ idMedico, requesterIdUsuario, requesterRol })
   return listPacientesByMedico(target, search)
+}
+
+/**
+ * Alta manual de un paciente desde el panel del médico.
+ * Si el DNI ya existe en el sistema, solo lo vincula a la agenda del médico.
+ */
+async function createPacienteManual({ fields = {}, requesterIdUsuario, requesterRol }) {
+  const idMedico = await resolveMedicoDestino({
+    idMedico: fields.id_medico,
+    requesterIdUsuario,
+    requesterRol,
+  })
+
+  const dni = validateDNI(fields.dni)
+  const nombre = validateName(fields.nombre, 'El nombre')
+  const apellido = validateName(fields.apellido, 'El apellido')
+
+  const idClinica = await resolveClinicaVinculo({ idMedico, idClinica: fields.id_clinica })
+
+  const existente = await findPacienteByDni(dni)
+  if (existente) {
+    await upsertPacienteVinculo({ idPaciente: existente.id_paciente, idMedico, idClinica })
+    return {
+      ...(await findPacienteById(existente.id_paciente)),
+      ya_existia: true,
+    }
+  }
+
+  const email = fields.email
+    ? validateEmail(fields.email)
+    : `paciente.${dni}@sin-email.local`
+
+  const { id_usuario: idUsuario } = await registerPaciente({
+    email,
+    // El paciente nunca recibe esta clave: para entrar debe usar "olvidé mi contraseña".
+    password: `${crypto.randomBytes(16).toString('hex')}Aa1`,
+    dni,
+    nombre,
+    apellido,
+    telefono: fields.telefono || null,
+    fecha_nac: fields.fecha_nac ? validateDate(fields.fecha_nac, 'La fecha de nacimiento') : null,
+    ...(await normalizePerfilFields({
+      id_obra_social: fields.id_obra_social ?? null,
+      nro_obra_social: fields.nro_obra_social,
+    })),
+  })
+
+  const creado = await findPacienteByUserId(idUsuario)
+  await upsertPacienteVinculo({ idPaciente: creado.id_paciente, idMedico, idClinica })
+
+  return { ...(await findPacienteById(creado.id_paciente)), ya_existia: false }
+}
+
+async function resolveClinicaVinculo({ idMedico, idClinica }) {
+  if (idClinica) {
+    const target = Number(idClinica)
+    if (!(await medicoTieneClinica({ idMedico, idClinica: target }))) {
+      throw new HttpError(400, 'El consultorio indicado no pertenece al médico')
+    }
+    return target
+  }
+
+  const primera = await findPrimeraClinicaByMedico(idMedico)
+  if (!primera) {
+    throw new HttpError(400, 'Cargá al menos un consultorio antes de agregar pacientes')
+  }
+  return primera
 }
 
 /**
@@ -373,6 +457,7 @@ async function aceptarTycByMedico({ idMedico, idTyc, requesterIdUsuario, request
 
 module.exports = {
   listPacientes,
+  createPacienteManual,
   getPaciente,
   patchPaciente,
   getMiPerfil,
