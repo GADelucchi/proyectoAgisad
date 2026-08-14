@@ -20,11 +20,21 @@ function resolveDuration({ requested, motivo, defaultDuration, byTypeName }) {
 }
 
 async function insertTurno(data) {
+  // Calcular hora_fin basado en hora_inicio + duracionMinutos
+  const [horaInicio] = data.hora.split(':')
+  const [minutosInicio] = data.hora.split(':')[1]
+  
+  // Sumar duración a la hora de inicio
+  let totalMinutos = parseInt(horaInicio) * 60 + parseInt(minutosInicio) + (data.duracionMinutos || 30)
+  const horaFinNum = Math.floor(totalMinutos / 60)
+  const minutosFinNum = totalMinutos % 60
+  const horaFin = `${String(horaFinNum).padStart(2, '0')}:${String(minutosFinNum).padStart(2, '0')}`
+
   const sql = `
     INSERT INTO turnos (
-      id_paciente, id_medico, id_clinica, id_disponibilidad, fecha, hora, estado, motivo_consulta
+      id_paciente, id_medico, id_clinica, fecha, hora_inicio, hora_fin, estado, motivo
     ) VALUES (
-      :idPaciente, :idMedico, :idClinica, :idDisponibilidad, :fecha, :hora, 'pendiente', :motivoConsulta
+      :idPaciente, :idMedico, :idClinica, :fecha, :horaInicio, :horaFin, 'pendiente', :motivo
     )
   `
 
@@ -32,35 +42,8 @@ async function insertTurno(data) {
   try {
     await conn.beginTransaction()
 
-    const [configRows] = await conn.execute(
-      `SELECT duracion_turno_estandar
-       FROM medico_turnos_config
-       WHERE id_medico = ?
-       LIMIT 1`,
-      [data.idMedico]
-    )
-    const defaultDuration = Number(configRows[0]?.duracion_turno_estandar || 30) || 30
-
-    const [tiposRows] = await conn.execute(
-      `SELECT nombre, duracion_minutos
-       FROM medico_tipos_turno
-       WHERE id_medico = ?
-         AND activo = 1`,
-      [data.idMedico]
-    )
-    const byTypeName = new Map(
-      (Array.isArray(tiposRows) ? tiposRows : []).map((row) => [normalizeLabel(row.nombre), Number(row.duracion_minutos || 0)])
-    )
-
-    const requestedDuration = resolveDuration({
-      requested: data.duracionMinutos,
-      motivo: data.motivoConsulta,
-      defaultDuration,
-      byTypeName,
-    })
-
     const [existingRows] = await conn.execute(
-      `SELECT DATE_FORMAT(hora, '%H:%i') AS hora, motivo_consulta
+      `SELECT DATE_FORMAT(hora_inicio, '%H:%i') AS hora, motivo
        FROM turnos
        WHERE id_medico = ?
          AND fecha = ?
@@ -69,18 +52,12 @@ async function insertTurno(data) {
       [data.idMedico, data.fecha]
     )
 
-    const start = toMinutes(data.hora)
-    const end = start + requestedDuration
+    const start = parseInt(data.hora.split(':')[0]) * 60 + parseInt(data.hora.split(':')[1])
+    const end = start + (data.duracionMinutos || 30)
 
     for (const existing of existingRows) {
-      const existingDuration = resolveDuration({
-        requested: null,
-        motivo: existing.motivo_consulta,
-        defaultDuration,
-        byTypeName,
-      })
-      const existingStart = toMinutes(existing.hora)
-      const existingEnd = existingStart + existingDuration
+      const existingStart = parseInt(existing.hora.split(':')[0]) * 60 + parseInt(existing.hora.split(':')[1])
+      const existingEnd = existingStart + 30 // duracion por defecto
       const overlaps = start < existingEnd && existingStart < end
       if (overlaps) {
         const err = new Error('El horario seleccionado se superpone con otro turno')
@@ -89,14 +66,22 @@ async function insertTurno(data) {
       }
     }
 
-    const [result] = await conn.execute(sql, data)
+    const [result] = await conn.execute(sql, {
+      idPaciente: data.idPaciente,
+      idMedico: data.idMedico,
+      idClinica: data.idClinica,
+      fecha: data.fecha,
+      horaInicio: data.hora,
+      horaFin: horaFin,
+      motivo: data.motivoConsulta || null,
+    })
     const idTurno = result.insertId
 
     await conn.execute(
       `INSERT INTO turnos_historial (
-        id_turno, id_clinica, id_medico, estado_anterior, estado_nuevo, modificado_por, motivo
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [idTurno, data.idClinica, data.idMedico, null, 'pendiente', data.modificadoPor || null, 'Alta de turno']
+        id_turno, estado_previo, estado_nuevo, id_usuario, motivo
+      ) VALUES (?, ?, ?, ?, ?)`,
+      [idTurno, null, 'pendiente', data.modificadoPor || null, 'Alta de turno']
     )
 
     await conn.commit()
@@ -130,9 +115,9 @@ async function updateTurnoEstado({ idTurno, estadoNuevo, modificadoPor, motivo }
 
     await conn.execute(
       `INSERT INTO turnos_historial (
-        id_turno, id_clinica, id_medico, estado_anterior, estado_nuevo, modificado_por, motivo
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [idTurno, turno.id_clinica, turno.id_medico, turno.estado, estadoNuevo, modificadoPor || null, motivo || null]
+        id_turno, estado_previo, estado_nuevo, id_usuario, motivo
+      ) VALUES (?, ?, ?, ?, ?)`,
+      [idTurno, turno.estado, estadoNuevo, modificadoPor || null, motivo || null]
     )
 
     await conn.commit()
@@ -150,7 +135,7 @@ async function listTurnosByMedicoRange({ idMedico, desde, hasta }) {
     `SELECT t.id_turno,
             DATE_FORMAT(t.fecha, '%d/%m/%Y') AS fecha,
             DATE_FORMAT(t.fecha, '%Y-%m-%d') AS fecha_iso,
-            DATE_FORMAT(t.hora, '%H:%i') AS hora,
+            DATE_FORMAT(t.hora_inicio, '%H:%i') AS hora,
             t.estado,
             t.id_clinica,
             p.nombre AS paciente_nombre,
@@ -159,7 +144,7 @@ async function listTurnosByMedicoRange({ idMedico, desde, hasta }) {
      INNER JOIN pacientes p ON p.id_paciente = t.id_paciente
      WHERE t.id_medico = :idMedico
        AND t.fecha BETWEEN :desde AND :hasta
-     ORDER BY t.fecha, t.hora`,
+     ORDER BY t.fecha, t.hora_inicio`,
     { idMedico, desde, hasta }
   )
 }
@@ -170,7 +155,7 @@ async function listHistorialByMedicoRange({ idMedico, desde, hasta }) {
             h.id_turno,
             DATE_FORMAT(t.fecha, '%d/%m/%Y') AS fecha,
             DATE_FORMAT(t.fecha, '%Y-%m-%d') AS fecha_iso,
-            DATE_FORMAT(t.hora, '%H:%i') AS hora,
+            DATE_FORMAT(t.hora_inicio, '%H:%i') AS hora,
             h.estado_anterior,
             h.estado_nuevo AS estado,
             t.id_clinica,
@@ -226,7 +211,7 @@ async function listTurnosByPaciente({ idPaciente, idMedico = null }) {
        t.id_medico,
        t.id_clinica,
        DATE_FORMAT(t.fecha, '%Y-%m-%d') AS fecha_iso,
-       DATE_FORMAT(t.hora, '%H:%i') AS hora,
+       DATE_FORMAT(t.hora_inicio, '%H:%i') AS hora,
        t.estado,
        c.nombre AS clinica_nombre,
        m.nombre AS medico_nombre,
@@ -236,7 +221,7 @@ async function listTurnosByPaciente({ idPaciente, idMedico = null }) {
      INNER JOIN medicos m ON m.id_medico = t.id_medico
      WHERE t.id_paciente = :idPaciente
        AND (:idMedico IS NULL OR t.id_medico = :idMedico)
-     ORDER BY t.fecha, t.hora`,
+     ORDER BY t.fecha, t.hora_inicio`,
     { idPaciente, idMedico }
   )
 }
