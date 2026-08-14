@@ -87,7 +87,19 @@ const env = {
   APP_TIMEZONE: requiredString('APP_TIMEZONE'),
   APP_LOCALE: requiredString('APP_LOCALE'),
   CORS_ALLOWED_ORIGINS: requiredString('CORS_ALLOWED_ORIGINS'),
-  TRUST_PROXY: asTrustProxy(process.env.TRUST_PROXY, 'TRUST_PROXY', false),
+  // En producción se corre detrás de un proxy (Render), sin esto todas las IPs se ven iguales.
+  TRUST_PROXY: asTrustProxy(
+    process.env.TRUST_PROXY,
+    'TRUST_PROXY',
+    process.env.NODE_ENV === 'production' ? 1 : false
+  ),
+  RATE_LIMIT_WINDOW_MS:
+    asNumber(process.env.RATE_LIMIT_WINDOW_MS, 'RATE_LIMIT_WINDOW_MS') ?? 15 * 60 * 1000,
+  RATE_LIMIT_MAX: asNumber(process.env.RATE_LIMIT_MAX, 'RATE_LIMIT_MAX') ?? 600,
+  LOGIN_RATE_LIMIT_WINDOW_MS:
+    asNumber(process.env.LOGIN_RATE_LIMIT_WINDOW_MS, 'LOGIN_RATE_LIMIT_WINDOW_MS') ??
+    10 * 60 * 1000,
+  LOGIN_RATE_LIMIT_MAX: asNumber(process.env.LOGIN_RATE_LIMIT_MAX, 'LOGIN_RATE_LIMIT_MAX') ?? 10,
 }
 
 module.exports = env
