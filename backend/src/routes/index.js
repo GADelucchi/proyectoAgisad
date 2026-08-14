@@ -10,6 +10,11 @@ const adminRoutes = require('../modules/admin/admin.routes')
 
 const router = Router()
 
+// Ruta simple de ping
+router.get('/ping', (_req, res) => {
+  res.status(200).json({ message: 'pong' })
+})
+
 router.use('/health', healthRoutes)
 router.use('/auth', authRoutes)
 router.use('/medicos', medicosRoutes)

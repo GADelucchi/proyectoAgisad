@@ -24,8 +24,8 @@ const globalLimiter = rateLimit({
     message: 'Demasiadas solicitudes. Reintentá en 15 minutos.',
   },
   skip: (req) => {
-    // No aplicar rate limit a GET / (health check)
-    return req.method === 'GET' && req.path === '/'
+    // No aplicar rate limit a GET / (health check) ni a OPTIONS (CORS preflight)
+    return (req.method === 'GET' && req.path === '/') || req.method === 'OPTIONS'
   },
 })
 
