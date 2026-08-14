@@ -32,6 +32,7 @@ const MIGRATIONS = [
   '016_trial_period.sql',
   '017_add_dni_to_medicos.sql',
   '018_turnos_estados_alineacion.sql',
+  '019_turnos_hora_fin_fix.sql',
 ]
 
 async function ensureLogTable(conn) {

@@ -95,6 +95,7 @@
 }
 .agenda-slot:last-child { border-bottom: none; }
 .agenda-slot.ocupado { background: var(--surface); }
+.agenda-slot.ocupado.externo { background: color-mix(in oklab, var(--warning-light) 35%, transparent); }
 .agenda-slot.libre { background: color-mix(in oklab, var(--success-light) 55%, transparent); }
 .agenda-slot.bloqueado { background: color-mix(in oklab, var(--warning-light) 55%, transparent); }
 
@@ -115,6 +116,8 @@
 
 .agenda-paciente { font-size: 0.88rem; font-weight: 600; color: var(--text-primary); }
 
+.agenda-slot-detalle { font-size: 0.78rem; color: var(--text-muted); }
+
 .agenda-slot-acciones { display: flex; gap: 0.3rem; flex-wrap: wrap; }
 
 .agenda-accion-btn {
@@ -130,6 +133,30 @@
 .agenda-accion-btn.no-asistio { border-color: var(--error);   color: var(--error);   background: var(--error-light); }
 .agenda-accion-btn.cancelar   { border-color: var(--border);  color: var(--text-muted); background: transparent; }
 .agenda-accion-btn.bloquear   { border-color: var(--warning); color: var(--warning); background: var(--warning-light); }
+.agenda-accion-btn.agendar    { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+.agenda-accion-btn:disabled   { opacity: 0.6; cursor: not-allowed; }
+
+.agenda-agendar-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+}
+
+.agenda-agendar-form .form-select,
+.agenda-agendar-form .form-input {
+  font-size: 0.82rem;
+  padding: 0.35rem 0.5rem;
+}
+
+.agenda-agendar-vacio {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
 
 .agenda-slot-libre {
   display: flex;

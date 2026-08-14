@@ -20,15 +20,10 @@ function resolveDuration({ requested, motivo, defaultDuration, byTypeName }) {
 }
 
 async function insertTurno(data) {
-  // Calcular hora_fin basado en hora_inicio + duracionMinutos
-  const [horaInicio] = data.hora.split(':')
-  const [minutosInicio] = data.hora.split(':')[1]
-  
-  // Sumar duración a la hora de inicio
-  let totalMinutos = parseInt(horaInicio) * 60 + parseInt(minutosInicio) + (data.duracionMinutos || 30)
-  const horaFinNum = Math.floor(totalMinutos / 60)
-  const minutosFinNum = totalMinutos % 60
-  const horaFin = `${String(horaFinNum).padStart(2, '0')}:${String(minutosFinNum).padStart(2, '0')}`
+  const duracion = Number(data.duracionMinutos) > 0 ? Number(data.duracionMinutos) : 30
+  const start = toMinutes(data.hora)
+  const end = start + duracion
+  const horaFin = `${String(Math.floor(end / 60) % 24).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`
 
   const sql = `
     INSERT INTO turnos (
@@ -43,7 +38,9 @@ async function insertTurno(data) {
     await conn.beginTransaction()
 
     const [existingRows] = await conn.execute(
-      `SELECT DATE_FORMAT(hora_inicio, '%H:%i') AS hora, motivo
+      `SELECT DATE_FORMAT(hora_inicio, '%H:%i') AS hora,
+              DATE_FORMAT(hora_fin, '%H:%i') AS hora_fin,
+              motivo
        FROM turnos
        WHERE id_medico = ?
          AND fecha = ?
@@ -52,12 +49,9 @@ async function insertTurno(data) {
       [data.idMedico, data.fecha]
     )
 
-    const start = parseInt(data.hora.split(':')[0]) * 60 + parseInt(data.hora.split(':')[1])
-    const end = start + (data.duracionMinutos || 30)
-
     for (const existing of existingRows) {
-      const existingStart = parseInt(existing.hora.split(':')[0]) * 60 + parseInt(existing.hora.split(':')[1])
-      const existingEnd = existingStart + 30 // duracion por defecto
+      const existingStart = toMinutes(existing.hora)
+      const existingEnd = existing.hora_fin ? toMinutes(existing.hora_fin) : existingStart + 30
       const overlaps = start < existingEnd && existingStart < end
       if (overlaps) {
         const err = new Error('El horario seleccionado se superpone con otro turno')
@@ -136,12 +130,15 @@ async function listTurnosByMedicoRange({ idMedico, desde, hasta }) {
             DATE_FORMAT(t.fecha, '%d/%m/%Y') AS fecha,
             DATE_FORMAT(t.fecha, '%Y-%m-%d') AS fecha_iso,
             DATE_FORMAT(t.hora_inicio, '%H:%i') AS hora,
+            DATE_FORMAT(t.hora_fin, '%H:%i') AS hora_fin,
             t.estado,
             t.id_clinica,
+            c.nombre AS clinica_nombre,
             p.nombre AS paciente_nombre,
             p.apellido AS paciente_apellido
      FROM turnos t
      INNER JOIN pacientes p ON p.id_paciente = t.id_paciente
+     LEFT JOIN clinicas c ON c.id_clinica = t.id_clinica
      WHERE t.id_medico = :idMedico
        AND t.fecha BETWEEN :desde AND :hasta
      ORDER BY t.fecha, t.hora_inicio`,

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAuth } from '../../../context/AuthContext'
 import { medicosApi } from '../../../services/medicos.api'
+import { pacientesApi } from '../../../services/pacientes.api'
 import { turnosApi } from '../../../services/turnos.api'
 import { formatDateDdMmYyyy, formatTime24h } from '../../../utils/dateFormat'
 import './AgendaTab.css'
@@ -42,7 +43,7 @@ function sumarMinutos(hora, minutos = 30) {
   return toTime(base + minutos).slice(0, 5)
 }
 
-function buildSlotsForDate(consultorio, date) {
+function buildSlotsForDate(consultorio, date, duracionEstandar = 30) {
   const iso = fechaStr(date)
   const slots = []
   const dayIndex = getDayIndex(date)
@@ -65,19 +66,29 @@ function buildSlotsForDate(consultorio, date) {
   for (const rango of ranges) {
     const start = toMinutes(rango.inicio || rango.desde)
     const end = toMinutes(rango.fin || rango.hasta)
-    const duration = Number(rango.duracion || 30)
+    const duration = Number(rango.duracion) > 0 ? Number(rango.duracion) : duracionEstandar
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue
 
     for (let minute = start; minute + duration <= end; minute += duration) {
       slots.push({
         hora: toTime(minute),
-        libre: true,
-        bloqueado: false,
+        duracion: duration,
       })
     }
   }
 
   return sortSlots(slots)
+}
+
+// La duración real del turno vive en hora_fin; 30 min es el fallback histórico.
+function rangoTurno(turno) {
+  const inicio = toMinutes(turno.hora)
+  const fin = turno.hora_fin ? toMinutes(turno.hora_fin) : inicio + 30
+  return { inicio, fin: fin > inicio ? fin : inicio + 30 }
+}
+
+function seSuperpone(a, b) {
+  return a.inicio < b.fin && b.inicio < a.fin
 }
 
 function estadoLabel(estado) {
@@ -102,6 +113,12 @@ export default function AgendaTab({ doctorId, readOnly = false }) {
   const [turnos, setTurnos] = useState([])
   const [bloqueos, setBloqueos] = useState([])
   const [mensajeAccion, setMensajeAccion] = useState('')
+  const [slotAgendando, setSlotAgendando] = useState(null)
+  const [pacientes, setPacientes] = useState([])
+  const [formTurno, setFormTurno] = useState({ id_paciente: '', motivo: '' })
+  const [guardandoTurno, setGuardandoTurno] = useState(false)
+  const [recargarTurnos, setRecargarTurnos] = useState(0)
+  const [duracionEstandar, setDuracionEstandar] = useState(30)
 
   useEffect(() => {
     if (!ownerDoctorId && !isSelfMedico) return
@@ -146,7 +163,7 @@ export default function AgendaTab({ doctorId, readOnly = false }) {
     return () => {
       cancelled = true
     }
-  }, [ownerDoctorId, isSelfMedico, fecha])
+  }, [ownerDoctorId, isSelfMedico, fecha, recargarTurnos])
 
   useEffect(() => {
     if (!isSelfMedico || readOnly) {
@@ -168,31 +185,50 @@ export default function AgendaTab({ doctorId, readOnly = false }) {
     }
   }, [isSelfMedico, readOnly])
 
+  useEffect(() => {
+    if (!ownerDoctorId && !isSelfMedico) return
+
+    let cancelled = false
+    const request = ownerDoctorId
+      ? medicosApi.getTurnosConfigByMedico(ownerDoctorId)
+      : medicosApi.getMyTurnosConfig()
+
+    request
+      .then((config) => {
+        const valor = Number(config?.duracion_turno_estandar)
+        if (!cancelled && Number.isFinite(valor) && valor > 0) setDuracionEstandar(valor)
+      })
+      .catch(() => {})
+
+    return () => {
+      cancelled = true
+    }
+  }, [ownerDoctorId, isSelfMedico])
+
   function moverDia(n) {
     const d = new Date(fecha)
     d.setDate(d.getDate() + n)
     setFecha(d)
+    setSlotAgendando(null)
   }
 
   const fechaLabel = formatDateDdMmYyyy(fecha)
   const slotsByClinica = useMemo(() => {
     const map = {}
     for (const consultorio of consultorios) {
-      map[consultorio.id] = buildSlotsForDate(consultorio, startOfDay(fecha))
+      map[consultorio.id] = buildSlotsForDate(consultorio, startOfDay(fecha), duracionEstandar)
     }
     return map
-  }, [consultorios, fecha])
+  }, [consultorios, fecha, duracionEstandar])
 
-  const turnosByClinicaAndDate = useMemo(() => {
+  const turnosDelDia = useMemo(() => {
     const map = {}
     for (const t of turnos) {
       const fechaKey = t.fecha_iso || t.fecha
-      if (!fechaKey) continue
-      const byClinica = map[t.id_clinica] || {}
-      const byDate = byClinica[fechaKey] || []
+      if (!fechaKey || !ocupaSlot(t.estado)) continue
+      const byDate = map[fechaKey] || []
       byDate.push(t)
-      byClinica[fechaKey] = byDate
-      map[t.id_clinica] = byClinica
+      map[fechaKey] = byDate
     }
     return map
   }, [turnos])
@@ -211,6 +247,35 @@ export default function AgendaTab({ doctorId, readOnly = false }) {
     return map
   }, [bloqueos])
 
+  /**
+   * Un slot se ocupa si su rango pisa el de un turno, aunque el turno arranque en otro slot
+   * o esté agendado en otra clínica (el médico no puede estar en dos lugares a la vez).
+   */
+  function resolverSlot({ slot, idClinica, fechaIso }) {
+    const rango = { inicio: toMinutes(slot.hora), fin: toMinutes(slot.hora) + (slot.duracion || 30) }
+
+    const superpuestos = (turnosDelDia[fechaIso] || []).filter((t) => seSuperpone(rango, rangoTurno(t)))
+    const propio = superpuestos.find((t) => Number(t.id_clinica) === Number(idClinica))
+
+    if (propio) {
+      const arrancaAca = horaKey(propio.hora) === horaKey(slot.hora)
+      return { tipo: arrancaAca ? 'turno' : 'continuacion', turno: propio }
+    }
+
+    if (superpuestos.length > 0) {
+      return { tipo: 'otra-clinica', turno: superpuestos[0] }
+    }
+
+    const bloqueado = (bloqueosByClinicaAndDate[idClinica]?.[fechaIso] || []).some((b) => {
+      const desde = String(b.hora_inicio || '').slice(0, 5)
+      const hasta = String(b.hora_fin || '').slice(0, 5)
+      if (!desde || !hasta) return true
+      return seSuperpone(rango, { inicio: toMinutes(desde), fin: toMinutes(hasta) })
+    })
+
+    return { tipo: bloqueado ? 'bloqueado' : 'libre' }
+  }
+
   async function marcarEstado(idTurno, estado) {
     try {
       await turnosApi.cambiarEstado(idTurno, estado)
@@ -221,9 +286,51 @@ export default function AgendaTab({ doctorId, readOnly = false }) {
     }
   }
 
-  async function bloquearHorario({ idClinica, fechaIso, hora }) {
+  async function abrirAgendar({ idClinica, fechaIso, hora, duracion }) {
+    setMensajeAccion('')
+    setFormTurno({ id_paciente: '', motivo: '' })
+    setSlotAgendando({ idClinica, fechaIso, hora: horaKey(hora), duracion: duracion || 30 })
+
+    if (pacientes.length > 0) return
+
+    try {
+      const rows = await pacientesApi.list(ownerDoctorId ? { idMedico: ownerDoctorId } : {})
+      setPacientes(Array.isArray(rows) ? rows : [])
+    } catch {
+      setPacientes([])
+      setMensajeAccion('No se pudo cargar el listado de pacientes.')
+    }
+  }
+
+  async function agendarTurno(event) {
+    event.preventDefault()
+    if (!slotAgendando || !formTurno.id_paciente) return
+
+    setGuardandoTurno(true)
+    setMensajeAccion('')
+    try {
+      await turnosApi.crear({
+        id_medico: ownerDoctorId || undefined,
+        id_paciente: Number(formTurno.id_paciente),
+        id_clinica: Number(slotAgendando.idClinica),
+        fecha: slotAgendando.fechaIso,
+        hora: `${slotAgendando.hora}:00`,
+        duracion_minutos: slotAgendando.duracion,
+        motivo_consulta: formTurno.motivo || null,
+      })
+      setSlotAgendando(null)
+      setRecargarTurnos((n) => n + 1)
+      setMensajeAccion('Turno agendado.')
+    } catch (err) {
+      setMensajeAccion(err?.message || 'No se pudo agendar el turno.')
+    } finally {
+      setGuardandoTurno(false)
+    }
+  }
+
+  async function bloquearHorario({ idClinica, fechaIso, hora, duracion }) {
     const horaInicio = String(hora || '').slice(0, 5)
-    const horaFin = sumarMinutos(horaInicio, 30)
+    const horaFin = sumarMinutos(horaInicio, duracion || 30)
     if (!horaInicio) return
 
     try {
@@ -270,42 +377,42 @@ export default function AgendaTab({ doctorId, readOnly = false }) {
         {consultorios.map((c) => {
           const key = fechaStr(fecha)
           const slotsDia = slotsByClinica[c.id] || []
-          const turnosDia = turnosByClinicaAndDate[c.id]?.[key] || []
-          const ocupadosByHora = new Set(turnosDia.filter((t) => ocupaSlot(t.estado)).map((t) => horaKey(t.hora)))
+          const estadoPorSlot = slotsDia.map((slot) => resolverSlot({ slot, idClinica: c.id, fechaIso: key }))
+          const libres = estadoPorSlot.filter((s) => s.tipo === 'libre').length
 
           return (
             <div key={c.id} className="agenda-columna surface-raised">
               <div className="agenda-col-header">
                 <span>{c.nombre}</span>
-                <span className="agenda-col-sub">{`${Math.max(slotsDia.length - ocupadosByHora.size, 0)} libres`}</span>
+                <span className="agenda-col-sub">{`${libres} libres`}</span>
               </div>
 
               {slotsDia.length === 0 && <p className="agenda-no-trabaja">Sin horarios configurados para este día.</p>}
 
-              {slotsDia.map((slot) => {
-                const turno = turnosDia.find((t) => horaKey(t.hora) === horaKey(slot.hora) && ocupaSlot(t.estado))
-                const bloqueosDia = bloqueosByClinicaAndDate[c.id]?.[key] || []
-                const bloqueado = bloqueosDia.some((b) => {
-                  const from = String(b.hora_inicio || '').slice(0, 5)
-                  const to = String(b.hora_fin || '').slice(0, 5)
-                  const slotHora = horaKey(slot.hora)
-                  if (!from || !to) return true
-                  return slotHora >= from && slotHora < to
-                })
-                const ocupado = Boolean(turno)
-                const libre = !turno && !bloqueado
+              {slotsDia.map((slot, index) => {
+                const { tipo, turno } = estadoPorSlot[index]
+                const claseSlot = tipo === 'libre'
+                  ? 'libre'
+                  : tipo === 'bloqueado'
+                    ? 'bloqueado'
+                    : tipo === 'otra-clinica'
+                      ? 'ocupado externo'
+                      : 'ocupado'
 
                 return (
-                  <div key={`${c.id}-${key}-${slot.hora}`} className={`agenda-slot ${ocupado ? 'ocupado' : libre ? 'libre' : bloqueado ? 'bloqueado' : ''}`}>
+                  <div key={`${c.id}-${key}-${slot.hora}`} className={`agenda-slot ${claseSlot}`}>
                     <span className="agenda-slot-hora">{formatTime24h(slot.hora)}</span>
                     <div className="agenda-slot-turno">
-                      {ocupado ? (
+                      {tipo === 'turno' ? (
                         <>
                           <div>
                             <span className="badge badge-primary" style={{ marginRight: 6 }}>Consulta</span>
                             <span className="badge badge-warning" style={{ marginRight: 6 }}>{estadoLabel(turno.estado)}</span>
                             <span className="agenda-paciente">{`${turno.paciente_nombre} ${turno.paciente_apellido}`}</span>
                           </div>
+                          {turno.hora_fin && (
+                            <span className="agenda-slot-detalle">{`Hasta ${formatTime24h(turno.hora_fin)}`}</span>
+                          )}
                           {!readOnly && (
                             <div className="agenda-slot-acciones">
                               <button className="agenda-accion-btn asistio" onClick={() => marcarEstado(turno.id_turno, 'completado')}>Asistio</button>
@@ -314,26 +421,91 @@ export default function AgendaTab({ doctorId, readOnly = false }) {
                             </div>
                           )}
                         </>
-                      ) : bloqueado ? (
+                      ) : tipo === 'continuacion' ? (
+                        <div className="agenda-slot-libre">
+                          <span className="agenda-slot-libre-texto">
+                            {`Continúa: ${turno.paciente_nombre} ${turno.paciente_apellido}`}
+                          </span>
+                          <span className="badge badge-muted">{`Desde ${formatTime24h(turno.hora)}`}</span>
+                        </div>
+                      ) : tipo === 'otra-clinica' ? (
+                        <div className="agenda-slot-libre">
+                          <span className="agenda-slot-libre-texto">
+                            {`Ocupado en ${turno.clinica_nombre || 'otro consultorio'}`}
+                          </span>
+                          <span className="badge badge-warning">No disponible</span>
+                        </div>
+                      ) : tipo === 'bloqueado' ? (
                         <div className="agenda-slot-libre">
                           <span className="agenda-slot-libre-texto">Bloqueado</span>
                           <span className="badge badge-warning">No disponible</span>
                         </div>
                       ) : (
-                        <div className="agenda-slot-libre">
-                          <span className="agenda-slot-libre-texto">Libre</span>
-                          <div className="agenda-slot-acciones">
-                            <span className="badge badge-muted">Vacio</span>
-                            {!readOnly && isSelfMedico && (
-                              <button
-                                className="agenda-accion-btn bloquear"
-                                onClick={() => bloquearHorario({ idClinica: c.id, fechaIso: key, hora: slot.hora })}
-                              >
-                                Bloquear
-                              </button>
-                            )}
+                        <>
+                          <div className="agenda-slot-libre">
+                            <span className="agenda-slot-libre-texto">Libre</span>
+                            <div className="agenda-slot-acciones">
+                              {!readOnly && isSelfMedico ? (
+                                <>
+                                  <button
+                                    className="agenda-accion-btn agendar"
+                                    onClick={() => abrirAgendar({ idClinica: c.id, fechaIso: key, hora: slot.hora, duracion: slot.duracion })}
+                                  >
+                                    + Agendar
+                                  </button>
+                                  <button
+                                    className="agenda-accion-btn bloquear"
+                                    onClick={() => bloquearHorario({ idClinica: c.id, fechaIso: key, hora: slot.hora, duracion: slot.duracion })}
+                                  >
+                                    Bloquear
+                                  </button>
+                                </>
+                              ) : (
+                                <span className="badge badge-muted">Vacio</span>
+                              )}
+                            </div>
                           </div>
-                        </div>
+
+                          {slotAgendando
+                            && slotAgendando.idClinica === c.id
+                            && slotAgendando.fechaIso === key
+                            && slotAgendando.hora === horaKey(slot.hora) && (
+                            <form className="agenda-agendar-form" onSubmit={agendarTurno}>
+                              <select
+                                className="form-select"
+                                value={formTurno.id_paciente}
+                                onChange={(e) => setFormTurno({ ...formTurno, id_paciente: e.target.value })}
+                                required
+                              >
+                                <option value="">Elegí un paciente...</option>
+                                {pacientes.map((p) => (
+                                  <option key={p.id_paciente} value={String(p.id_paciente)}>
+                                    {`${p.apellido || ''} ${p.nombre || ''}`.trim()} - DNI {p.dni || '-'}
+                                  </option>
+                                ))}
+                              </select>
+                              <input
+                                className="form-input"
+                                placeholder="Motivo (opcional)"
+                                value={formTurno.motivo}
+                                onChange={(e) => setFormTurno({ ...formTurno, motivo: e.target.value })}
+                              />
+                              <div className="agenda-slot-acciones">
+                                <button className="agenda-accion-btn asistio" type="submit" disabled={guardandoTurno}>
+                                  {guardandoTurno ? 'Agendando...' : 'Confirmar'}
+                                </button>
+                                <button className="agenda-accion-btn cancelar" type="button" onClick={() => setSlotAgendando(null)}>
+                                  Cancelar
+                                </button>
+                              </div>
+                              {pacientes.length === 0 && (
+                                <span className="agenda-agendar-vacio">
+                                  Todavía no tenés pacientes con turnos previos para agendar.
+                                </span>
+                              )}
+                            </form>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>

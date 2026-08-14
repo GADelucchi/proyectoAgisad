@@ -14,11 +14,21 @@ const ESTADOS_VALIDOS = new Set([
 ])
 
 async function crearTurno(input, authUser) {
-  const required = ['id_medico', 'id_clinica', 'fecha', 'hora']
+  const required = ['id_clinica', 'fecha', 'hora']
   for (const field of required) {
     if (!input[field]) {
       throw new HttpError(400, `Falta el campo obligatorio: ${field}`)
     }
+  }
+
+  // El médico solo puede agendar en su propia agenda, sin importar lo que mande el body.
+  let idMedico = input.id_medico ? Number(input.id_medico) : null
+  if (authUser?.rol === 'medico') {
+    idMedico = Number(await turnosRepo.findMedicoIdByUserId(authUser.idUsuario)) || null
+  }
+
+  if (!idMedico) {
+    throw new HttpError(400, 'Falta el campo obligatorio: id_medico')
   }
 
   let idPaciente = input.id_paciente ? Number(input.id_paciente) : null
@@ -30,7 +40,7 @@ async function crearTurno(input, authUser) {
     throw new HttpError(400, 'id_paciente invalido')
   }
 
-  const puedeTomarTurnos = await turnosRepo.medicoPermiteTurnos(Number(input.id_medico))
+  const puedeTomarTurnos = await turnosRepo.medicoPermiteTurnos(idMedico)
   if (puedeTomarTurnos === null) {
     throw new HttpError(404, 'Medico no encontrado')
   }
@@ -39,7 +49,7 @@ async function crearTurno(input, authUser) {
   }
 
   // Validar que el médico tenga membresía activa
-  await assertMembershipNotExpiredByMedicoId(Number(input.id_medico), 'No es posible agendar turnos')
+  await assertMembershipNotExpiredByMedicoId(idMedico, 'No es posible agendar turnos')
 
   // Validar motivo_consulta si se proporciona
   const validatedMotivo = validateTextField(input.motivo_consulta, 500, 'El motivo de consulta', false)
@@ -47,7 +57,7 @@ async function crearTurno(input, authUser) {
   try {
     const idTurno = await turnosRepo.insertTurno({
       idPaciente,
-      idMedico: Number(input.id_medico),
+      idMedico,
       idClinica: Number(input.id_clinica),
       idDisponibilidad: input.id_disponibilidad ? Number(input.id_disponibilidad) : null,
       fecha: input.fecha,

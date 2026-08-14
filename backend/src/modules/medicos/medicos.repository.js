@@ -128,12 +128,35 @@ async function findExtraDisponibilidadByMedicoClinicaFecha({ idMedico, idClinica
 async function findTurnosTomados({ idMedico, fecha }) {
   return query(
     `SELECT DATE_FORMAT(hora_inicio, '%H:%i') AS hora,
+            DATE_FORMAT(hora_fin, '%H:%i') AS hora_fin,
             motivo AS motivo_consulta
      FROM turnos
      WHERE id_medico = :idMedico
        AND fecha = :fecha
        AND estado NOT IN ('cancelado', 'cancelado_paciente', 'cancelado_clinica')`,
     { idMedico, fecha }
+  )
+}
+
+async function findTurnosFuturosByMedico(idMedico) {
+  return query(
+    `SELECT t.id_turno,
+            DATE_FORMAT(t.fecha, '%d/%m/%Y') AS fecha,
+            DATE_FORMAT(t.fecha, '%Y-%m-%d') AS fecha_iso,
+            DATE_FORMAT(t.hora_inicio, '%H:%i') AS hora,
+            DATE_FORMAT(t.hora_fin, '%H:%i') AS hora_fin,
+            t.id_clinica,
+            c.nombre AS clinica_nombre,
+            p.nombre AS paciente_nombre,
+            p.apellido AS paciente_apellido
+     FROM turnos t
+     INNER JOIN pacientes p ON p.id_paciente = t.id_paciente
+     LEFT JOIN clinicas c ON c.id_clinica = t.id_clinica
+     WHERE t.id_medico = :idMedico
+       AND t.fecha >= CURDATE()
+       AND t.estado IN ('pendiente', 'confirmado', 'en_curso')
+     ORDER BY t.fecha, t.hora_inicio`,
+    { idMedico }
   )
 }
 
@@ -605,6 +628,7 @@ module.exports = {
   findDisponibilidadByMedicoClinicaDia,
   findExtraDisponibilidadByMedicoClinicaFecha,
   findTurnosTomados,
+  findTurnosFuturosByMedico,
   findMedicoIdByUserId,
   findActiveTycByMedico,
   findTurnosConfigByMedico,

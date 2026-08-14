@@ -175,6 +175,9 @@ async function getDisponibilidad({ idMedico, idClinica, fecha, duracionMinutos =
   const tomadosRows = await medicosRepo.findTurnosTomados({ idMedico, fecha })
   const ocupados = tomadosRows.map((row) => {
     const start = toMinutes(normalizeHourKey(row.hora))
+    if (row.hora_fin) {
+      return { start, end: toMinutes(normalizeHourKey(row.hora_fin)) }
+    }
     const fromType = durationByTypeName.get(normalizeLabel(row.motivo_consulta))
     const duration = Number.isInteger(fromType) && fromType > 0 ? fromType : duracionDefault
     return {
@@ -253,6 +256,40 @@ async function getMyTurnosConfig({ requesterIdUsuario, requesterRol }) {
   return getTurnosConfigByMedico({ idMedico: Number(medico.id_medico) })
 }
 
+/**
+ * Turnos futuros cuyo horario dejaría de coincidir con la grilla si se aplica `duracion`.
+ */
+async function findTurnosDesalineados({ idMedico, duracion }) {
+  const turnos = await medicosRepo.findTurnosFuturosByMedico(Number(idMedico))
+  if (turnos.length === 0) return []
+
+  const { disponibilidad, disponibilidadUnica } = await medicosRepo.listClinicasByMedico(Number(idMedico))
+
+  return turnos.filter((turno) => {
+    const inicio = toMinutes(normalizeHourKey(turno.hora))
+    const fin = turno.hora_fin ? toMinutes(normalizeHourKey(turno.hora_fin)) : inicio + duracion
+    const diaSemana = getDayOfWeek(turno.fecha_iso)
+
+    const franjas = [
+      ...disponibilidad.filter((d) => (
+        Number(d.id_clinica) === Number(turno.id_clinica) && Number(d.dia_semana) === diaSemana
+      )),
+      ...disponibilidadUnica.filter((d) => (
+        Number(d.id_clinica) === Number(turno.id_clinica) && d.fecha === turno.fecha_iso
+      )),
+    ]
+
+    const encaja = franjas.some((franja) => {
+      const desde = toMinutes(normalizeHourKey(franja.hora_inicio))
+      const hasta = toMinutes(normalizeHourKey(franja.hora_fin))
+      if (inicio < desde || fin > hasta) return false
+      return (inicio - desde) % duracion === 0
+    })
+
+    return !encaja
+  })
+}
+
 async function saveMyTurnosConfig({ input, requesterIdUsuario, requesterRol }) {
   const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
   await ensureTurnosFeatureForUser(requesterIdUsuario)
@@ -272,6 +309,22 @@ async function saveMyTurnosConfig({ input, requesterIdUsuario, requesterRol }) {
 
   if (tiposTurno.some((tipo) => !Number.isInteger(tipo.duracion) || tipo.duracion <= 0)) {
     throw new HttpError(400, 'Cada tipo de turno debe tener duracion en minutos valida')
+  }
+
+  const actual = await getTurnosConfigByMedico({ idMedico: Number(medico.id_medico) })
+  if (actual.duracion_turno_estandar !== duracionTurnoEstandar && !asBool(input?.confirmar)) {
+    const afectados = await findTurnosDesalineados({
+      idMedico: Number(medico.id_medico),
+      duracion: duracionTurnoEstandar,
+    })
+
+    if (afectados.length > 0) {
+      throw new HttpError(
+        409,
+        `Hay ${afectados.length} turno(s) agendado(s) que no coinciden con una grilla de ${duracionTurnoEstandar} minutos`,
+        { turnos_afectados: afectados }
+      )
+    }
   }
 
   await medicosRepo.upsertTurnosConfigByMedico({

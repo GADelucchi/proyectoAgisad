@@ -112,6 +112,34 @@
   margin: 0;
 }
 
+.config-conflicto {
+  margin-top: 0.9rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--warning-light) 45%, transparent);
+}
+
+.config-conflicto-titulo {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.config-conflicto-lista {
+  margin: 0 0 0.75rem;
+  padding-left: 1.1rem;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.config-conflicto-acciones {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .config-modal-backdrop {
   position: fixed;
   inset: 0;

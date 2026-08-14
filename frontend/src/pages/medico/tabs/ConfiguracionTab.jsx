@@ -106,6 +106,7 @@ export default function ConfiguracionTab({ permiteTurnos = true }) {
   const [duracion, setDuracion] = useState('30')
   const [tiposTurno, setTiposTurno] = useState([turnoTipoFormBase()])
   const [estadoTurnos, setEstadoTurnos] = useState('')
+  const [turnosEnConflicto, setTurnosEnConflicto] = useState([])
   const [terminos, setTerminos] = useState('')
   const [terminosEstado, setTerminosEstado] = useState('')
   const [estadoCrud, setEstadoCrud] = useState('')
@@ -417,7 +418,7 @@ export default function ConfiguracionTab({ permiteTurnos = true }) {
     })
   }
 
-  async function guardarTurnosConfig() {
+  async function guardarTurnosConfig(confirmar = false) {
     const tiposLimpios = tiposTurno
       .map((tipo) => ({
         nombre: tipo.nombre.trim(),
@@ -439,12 +440,20 @@ export default function ConfiguracionTab({ permiteTurnos = true }) {
       const saved = await medicosApi.saveMyTurnosConfig({
         duracion_turno_estandar: Number(duracion),
         tipos_turno: tiposLimpios,
+        confirmar,
       })
       const nextTipos = Array.isArray(saved?.tipos_turno) ? saved.tipos_turno.map(mapTipoTurno) : []
       setDuracion(String(saved?.duracion_turno_estandar || duracion))
       setTiposTurno(nextTipos.length > 0 ? nextTipos : [turnoTipoFormBase()])
+      setTurnosEnConflicto([])
       setEstadoTurnos('Configuración de turnos guardada correctamente.')
     } catch (err) {
+      if (err?.status === 409 && Array.isArray(err?.details?.turnos_afectados)) {
+        setTurnosEnConflicto(err.details.turnos_afectados)
+        setEstadoTurnos(err.message)
+        return
+      }
+      setTurnosEnConflicto([])
       setEstadoTurnos(err?.message || 'No se pudo guardar la configuración de turnos.')
     }
   }
@@ -692,8 +701,31 @@ export default function ConfiguracionTab({ permiteTurnos = true }) {
         </div>
 
         {tiposTurno.length === 0 && <p className="config-turnos-empty">No hay tipos de turno configurados.</p>}
-        <Button size="sm" onClick={guardarTurnosConfig}>Guardar configuracion</Button>
+        <Button size="sm" onClick={() => guardarTurnosConfig(false)}>Guardar configuracion</Button>
         {estadoTurnos && <p className="config-terms-msg">{estadoTurnos}</p>}
+
+        {turnosEnConflicto.length > 0 && (
+          <div className="config-conflicto">
+            <p className="config-conflicto-titulo">
+              Estos turnos ya agendados no caen en la grilla de {duracion} minutos. Si guardás igual,
+              seguirán vigentes pero ocuparán horarios que no coinciden con los nuevos slots.
+            </p>
+            <ul className="config-conflicto-lista">
+              {turnosEnConflicto.map((t) => (
+                <li key={t.id_turno}>
+                  {`${t.fecha} ${t.hora} - ${t.paciente_nombre} ${t.paciente_apellido}`}
+                  {t.clinica_nombre ? ` (${t.clinica_nombre})` : ''}
+                </li>
+              ))}
+            </ul>
+            <div className="config-conflicto-acciones">
+              <Button size="sm" onClick={() => guardarTurnosConfig(true)}>Guardar de todos modos</Button>
+              <Button size="sm" variant="ghost" onClick={() => { setTurnosEnConflicto([]); setEstadoTurnos('') }}>
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        )}
       </section>
       )}
 
