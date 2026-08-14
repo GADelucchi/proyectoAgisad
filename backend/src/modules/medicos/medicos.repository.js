@@ -127,12 +127,12 @@ async function findExtraDisponibilidadByMedicoClinicaFecha({ idMedico, idClinica
 
 async function findTurnosTomados({ idMedico, fecha }) {
   return query(
-    `SELECT DATE_FORMAT(hora, '%H:%i') AS hora,
-            motivo_consulta
+    `SELECT DATE_FORMAT(hora_inicio, '%H:%i') AS hora,
+            motivo AS motivo_consulta
      FROM turnos
      WHERE id_medico = :idMedico
        AND fecha = :fecha
-       AND estado NOT IN ('cancelado_paciente', 'cancelado_clinica')`,
+       AND estado NOT IN ('cancelado', 'cancelado_paciente', 'cancelado_clinica')`,
     { idMedico, fecha }
   )
 }

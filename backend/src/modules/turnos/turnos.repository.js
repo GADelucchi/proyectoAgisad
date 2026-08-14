@@ -47,7 +47,7 @@ async function insertTurno(data) {
        FROM turnos
        WHERE id_medico = ?
          AND fecha = ?
-         AND estado NOT IN ('cancelado_paciente', 'cancelado_clinica')
+         AND estado NOT IN ('cancelado', 'cancelado_paciente', 'cancelado_clinica')
        FOR UPDATE`,
       [data.idMedico, data.fecha]
     )
