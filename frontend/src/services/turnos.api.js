@@ -8,6 +8,7 @@ function mapTurno(row) {
     dateIso: row.fecha_iso,
     time: row.hora,
     status: row.estado,
+    type: row.motivo || '',
     clinicName: row.clinica_nombre,
     doctorName: `${row.medico_nombre || ''} ${row.medico_apellido || ''}`.trim(),
   }

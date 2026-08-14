@@ -7,6 +7,10 @@ const {
   createRecetaSolicitud,
   createMensajeSolicitud,
   updatePaciente,
+  listObrasSociales,
+  existsObraSocial,
+  listRecetasByPaciente,
+  listMensajesByPaciente,
   findMedicoIdByUserId,
   hasAsistenteAccessToMedico,
   findActiveTycByMedico,
@@ -15,7 +19,11 @@ const {
 } = require('./pacientes.repository')
 const { sendRecetaSolicitudEmail, sendPacienteMensajeEmail } = require('../../utils/mailer')
 const { assertMembershipNotExpiredByMedicoId } = require('../membresias/membresias.service')
-const { validateTextField } = require('../../utils/validators')
+const {
+  validateTextField,
+  validatePhoneNumber,
+  validateDate,
+} = require('../../utils/validators')
 
 /**
  * Lista pacientes del médico (o asistente actuando en nombre de un médico).
@@ -78,8 +86,102 @@ async function patchPaciente({ idPaciente, fields, requesterIdUsuario, requester
     throw new HttpError(403, 'Solo podés editar tu propio perfil')
   }
 
-  await updatePaciente(Number(idPaciente), fields)
+  await updatePaciente(Number(idPaciente), await normalizePerfilFields(fields))
   return findPacienteById(Number(idPaciente))
+}
+
+/**
+ * Deja solo los campos presentes en el body: `undefined` no toca la columna y `null` la limpia.
+ */
+async function normalizePerfilFields(fields = {}) {
+  const normalized = {}
+
+  if (fields.telefono) {
+    normalized.telefono = validatePhoneNumber(fields.telefono)
+  }
+
+  if (fields.fecha_nac) {
+    normalized.fecha_nac = validateDate(fields.fecha_nac, 'La fecha de nacimiento')
+  }
+
+  if ('id_obra_social' in fields) {
+    const raw = fields.id_obra_social
+
+    if (raw === null || raw === '') {
+      normalized.id_obra_social = null
+      normalized.nro_obra_social = null
+    } else {
+      const idObraSocial = Number(raw)
+      if (!Number.isInteger(idObraSocial) || idObraSocial <= 0) {
+        throw new HttpError(400, 'La obra social seleccionada no es válida')
+      }
+      if (!(await existsObraSocial(idObraSocial))) {
+        throw new HttpError(400, 'La obra social seleccionada no existe')
+      }
+      normalized.id_obra_social = idObraSocial
+    }
+  }
+
+  if ('nro_obra_social' in fields && normalized.nro_obra_social === undefined) {
+    normalized.nro_obra_social = validateTextField(
+      fields.nro_obra_social,
+      30,
+      'El número de afiliado'
+    )
+  }
+
+  return normalized
+}
+
+async function getMiPaciente(requesterIdUsuario) {
+  const paciente = await findPacienteByUserId(requesterIdUsuario)
+  if (!paciente) throw new HttpError(404, 'Paciente no encontrado')
+  return paciente
+}
+
+/**
+ * Perfil del paciente autenticado, sin exponer ids ajenos.
+ */
+async function getMiPerfil({ requesterIdUsuario }) {
+  const paciente = await getMiPaciente(requesterIdUsuario)
+  return findPacienteById(paciente.id_paciente)
+}
+
+async function patchMiPerfil({ fields, requesterIdUsuario }) {
+  const paciente = await getMiPaciente(requesterIdUsuario)
+  await updatePaciente(paciente.id_paciente, await normalizePerfilFields(fields))
+  return findPacienteById(paciente.id_paciente)
+}
+
+async function listCatalogoObrasSociales() {
+  return listObrasSociales()
+}
+
+async function listMisRecetas({ requesterIdUsuario }) {
+  const paciente = await getMiPaciente(requesterIdUsuario)
+  const rows = await listRecetasByPaciente(paciente.id_paciente)
+
+  return rows.map((row) => ({
+    ...row,
+    items: parseItemsJson(row.items_json),
+    items_json: undefined,
+  }))
+}
+
+async function listMisMensajes({ requesterIdUsuario }) {
+  const paciente = await getMiPaciente(requesterIdUsuario)
+  return listMensajesByPaciente(paciente.id_paciente)
+}
+
+function parseItemsJson(value) {
+  if (Array.isArray(value)) return value
+  if (typeof value !== 'string') return []
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
 }
 
 async function solicitarReceta({ idMedico, tipo, items, requesterIdUsuario, requesterRol }) {
@@ -273,6 +375,11 @@ module.exports = {
   listPacientes,
   getPaciente,
   patchPaciente,
+  getMiPerfil,
+  patchMiPerfil,
+  listCatalogoObrasSociales,
+  listMisRecetas,
+  listMisMensajes,
   solicitarReceta,
   solicitarMensaje,
   getTycByMedico,

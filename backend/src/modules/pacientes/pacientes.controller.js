@@ -2,6 +2,11 @@ const {
   listPacientes,
   getPaciente,
   patchPaciente,
+  getMiPerfil,
+  patchMiPerfil,
+  listCatalogoObrasSociales,
+  listMisRecetas,
+  listMisMensajes,
   solicitarReceta,
   solicitarMensaje,
   getTycByMedico,
@@ -44,6 +49,54 @@ async function patch(req, res, next) {
       requesterIdUsuario: req.user.idUsuario,
       requesterRol: req.user.rol,
     })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function getMe(req, res, next) {
+  try {
+    const data = await getMiPerfil({ requesterIdUsuario: req.user.idUsuario })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function patchMe(req, res, next) {
+  try {
+    const data = await patchMiPerfil({
+      fields: req.body,
+      requesterIdUsuario: req.user.idUsuario,
+    })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function listObrasSociales(_req, res, next) {
+  try {
+    const data = await listCatalogoObrasSociales()
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function listMyRecetas(req, res, next) {
+  try {
+    const data = await listMisRecetas({ requesterIdUsuario: req.user.idUsuario })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function listMyMensajes(req, res, next) {
+  try {
+    const data = await listMisMensajes({ requesterIdUsuario: req.user.idUsuario })
     res.json(data)
   } catch (err) {
     next(err)
@@ -108,4 +161,17 @@ async function acceptTyc(req, res, next) {
   }
 }
 
-module.exports = { list, getOne, patch, requestReceta, requestMensaje, getTyc, acceptTyc }
+module.exports = {
+  list,
+  getOne,
+  patch,
+  getMe,
+  patchMe,
+  listObrasSociales,
+  listMyRecetas,
+  listMyMensajes,
+  requestReceta,
+  requestMensaje,
+  getTyc,
+  acceptTyc,
+}

@@ -17,6 +17,7 @@ import VerificarEmailPage   from './pages/public/VerificarEmailPage'
 import RecuperarPasswordPage from './pages/public/RecuperarPasswordPage'
 import NuevaPasswordPage     from './pages/public/NuevaPasswordPage'
 import BuscadorMedicoPage   from './pages/paciente/BuscadorMedicoPage'
+import PanelPacientePage    from './pages/paciente/PanelPacientePage'
 import AccionesPage         from './pages/paciente/AccionesPage'
 import SolicitarRecetaPage  from './pages/paciente/SolicitarRecetaPage'
 import WizardTurnoPage      from './pages/paciente/turno/WizardTurnoPage'
@@ -47,6 +48,7 @@ export default function App() {
             </Route>
             <Route element={<PacienteLayout />}>
               <Route path="/paciente"                    element={<BuscadorMedicoPage />} />
+              <Route path="/paciente/panel"              element={<PanelPacientePage />} />
               <Route path="/paciente/medico/:medicoId"   element={<AccionesPage />} />
               <Route path="/paciente/receta/:medicoId"   element={<SolicitarRecetaPage />} />
               <Route path="/paciente/turno/:medicoId"    element={<WizardTurnoPage />} />

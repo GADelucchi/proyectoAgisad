@@ -12,7 +12,11 @@ export default function PacienteLayout() {
 
   return (
     <div className="panel-layout">
-      <Navbar titulo={`Hola, ${getUserDisplayName(usuario, 'Paciente')}`} subtitulo="Panel paciente" />
+      <Navbar
+        titulo={`Hola, ${getUserDisplayName(usuario, 'Paciente')}`}
+        subtitulo="Ver mi panel"
+        tituloTo="/paciente/panel"
+      />
       <main className="panel-main">
         <div className="container">
           <Outlet />

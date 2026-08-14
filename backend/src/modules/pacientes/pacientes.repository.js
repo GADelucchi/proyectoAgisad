@@ -45,6 +45,8 @@ async function findPacienteById(idPaciente) {
        p.apellido,
        p.telefono,
        DATE_FORMAT(p.fecha_nac, '%d/%m/%Y') AS fecha_nac,
+       DATE_FORMAT(p.fecha_nac, '%Y-%m-%d') AS fecha_nac_iso,
+       p.id_obra_social,
        p.nro_obra_social,
        p.acepta_tyc,
        u.email,
@@ -130,17 +132,83 @@ async function createMensajeSolicitud({ idPaciente, idMedico, asunto, mensaje, e
 
 /**
  * Actualiza los campos editables del perfil del paciente.
+ * Solo se tocan las columnas presentes en `fields` (null borra el valor).
  */
 async function updatePaciente(idPaciente, fields) {
-  const { telefono, fecha_nac, nro_obra_social, id_obra_social } = fields
+  const editables = ['telefono', 'fecha_nac', 'nro_obra_social', 'id_obra_social']
+  const params = { idPaciente }
+  const asignaciones = []
+
+  for (const columna of editables) {
+    if (fields[columna] === undefined) continue
+    asignaciones.push(`${columna} = :${columna}`)
+    params[columna] = fields[columna]
+  }
+
+  if (asignaciones.length === 0) return
+
   await query(
     `UPDATE pacientes
-     SET telefono        = COALESCE(:telefono, telefono),
-         fecha_nac       = COALESCE(:fecha_nac, fecha_nac),
-         nro_obra_social = COALESCE(:nro_obra_social, nro_obra_social),
-         id_obra_social  = COALESCE(:id_obra_social, id_obra_social)
+     SET ${asignaciones.join(', ')}
      WHERE id_paciente = :idPaciente`,
-    { idPaciente, telefono, fecha_nac, nro_obra_social, id_obra_social }
+    params
+  )
+}
+
+async function listObrasSociales() {
+  return query(
+    `SELECT id_obra_social, nombre
+     FROM obras_sociales
+     ORDER BY nombre`
+  )
+}
+
+async function existsObraSocial(idObraSocial) {
+  const rows = await query(
+    `SELECT 1 AS ok
+     FROM obras_sociales
+     WHERE id_obra_social = :idObraSocial
+     LIMIT 1`,
+    { idObraSocial }
+  )
+  return Boolean(rows[0])
+}
+
+async function listRecetasByPaciente(idPaciente) {
+  return query(
+    `SELECT
+       rs.id_solicitud,
+       rs.id_medico,
+       rs.tipo,
+       rs.items_json,
+       rs.estado,
+       DATE_FORMAT(rs.creado_en, '%Y-%m-%dT%H:%i:%s') AS creado_en,
+       m.nombre   AS medico_nombre,
+       m.apellido AS medico_apellido
+     FROM receta_solicitudes rs
+     INNER JOIN medicos m ON m.id_medico = rs.id_medico
+     WHERE rs.id_paciente = :idPaciente
+     ORDER BY rs.creado_en DESC`,
+    { idPaciente }
+  )
+}
+
+async function listMensajesByPaciente(idPaciente) {
+  return query(
+    `SELECT
+       ms.id_solicitud,
+       ms.id_medico,
+       ms.asunto,
+       ms.mensaje,
+       ms.estado,
+       DATE_FORMAT(ms.creado_en, '%Y-%m-%dT%H:%i:%s') AS creado_en,
+       m.nombre   AS medico_nombre,
+       m.apellido AS medico_apellido
+     FROM mensaje_solicitudes ms
+     INNER JOIN medicos m ON m.id_medico = ms.id_medico
+     WHERE ms.id_paciente = :idPaciente
+     ORDER BY ms.creado_en DESC`,
+    { idPaciente }
   )
 }
 
@@ -211,6 +279,10 @@ module.exports = {
   createRecetaSolicitud,
   createMensajeSolicitud,
   updatePaciente,
+  listObrasSociales,
+  existsObraSocial,
+  listRecetasByPaciente,
+  listMensajesByPaciente,
   findMedicoIdByUserId,
   hasAsistenteAccessToMedico,
   findActiveTycByMedico,

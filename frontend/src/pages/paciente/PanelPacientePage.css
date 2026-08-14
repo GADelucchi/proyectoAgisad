@@ -1,0 +1,155 @@
+.panel-paciente {
+  padding: 2rem 0;
+  max-width: 900px;
+}
+
+.panel-paciente-volver {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.88rem;
+  padding: 0;
+  margin-bottom: 1.5rem;
+  transition: color var(--transition);
+}
+.panel-paciente-volver:hover { color: var(--primary); }
+
+.panel-paciente-header { margin-bottom: 1.5rem; }
+.panel-paciente-header h1 { font-size: 2rem; margin-bottom: 0.25rem; }
+.panel-paciente-header p { color: var(--text-muted); font-size: 0.9rem; }
+
+.panel-paciente-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.75rem;
+}
+
+.panel-paciente-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0.5rem 0.9rem;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.panel-paciente-tab:hover { color: var(--primary); }
+
+.panel-paciente-tab.active {
+  background: var(--primary-light);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.panel-paciente-seccion {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.panel-paciente-card {
+  padding: 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.panel-paciente-card h2 { font-size: 1.15rem; }
+
+.panel-paciente-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.panel-paciente-nota,
+.panel-paciente-empty {
+  color: var(--text-muted);
+  font-size: 0.84rem;
+}
+
+.panel-paciente-loading { color: var(--text-muted); font-size: 0.9rem; }
+.panel-paciente-ok { color: var(--success); font-size: 0.86rem; }
+
+.panel-paciente-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.panel-paciente-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+}
+
+.panel-paciente-item-col {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.panel-paciente-item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.panel-paciente-item p {
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  margin-top: 2px;
+}
+
+.panel-paciente-item-extra { font-style: italic; }
+
+.panel-paciente-item-acciones {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.panel-paciente-medicamentos {
+  list-style: disc;
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.panel-paciente-mensaje {
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 640px) {
+  .panel-paciente-item,
+  .panel-paciente-item-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

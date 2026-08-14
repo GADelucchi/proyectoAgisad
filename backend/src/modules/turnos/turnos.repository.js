@@ -213,6 +213,7 @@ async function listTurnosByPaciente({ idPaciente, idMedico = null }) {
        DATE_FORMAT(t.fecha, '%Y-%m-%d') AS fecha_iso,
        DATE_FORMAT(t.hora_inicio, '%H:%i') AS hora,
        t.estado,
+       t.motivo,
        c.nombre AS clinica_nombre,
        m.nombre AS medico_nombre,
        m.apellido AS medico_apellido

@@ -14,6 +14,11 @@ export const pacientesApi = {
   },
   solicitarReceta: (idMedico, payload) => api.post(`/pacientes/medicos/${idMedico}/recetas`, payload),
   enviarMensaje: (idMedico, payload) => api.post(`/pacientes/medicos/${idMedico}/mensajes`, payload),
+  getMiPerfil: () => api.get('/pacientes/me'),
+  actualizarMiPerfil: (payload) => api.patch('/pacientes/me', payload),
+  listarObrasSociales: () => api.get('/pacientes/obras-sociales'),
+  listarMisRecetas: () => api.get('/pacientes/me/recetas'),
+  listarMisMensajes: () => api.get('/pacientes/me/mensajes'),
   getTycMedico: (idMedico) => api.get(`/pacientes/medicos/${idMedico}/tyc`),
   aceptarTycMedico: (idMedico, idTyc) =>
     api.post(`/pacientes/medicos/${idMedico}/tyc/aceptar`, { id_tyc: idTyc }),

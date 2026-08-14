@@ -4,7 +4,7 @@ import { useAuth } from "../../context/AuthContext";
 import { LogOut, Bell } from "lucide-react";
 import "./Navbar.css";
 
-export default function Navbar({ titulo, subtitulo, acciones }) {
+export default function Navbar({ titulo, subtitulo, tituloTo, acciones }) {
   const { usuario, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -13,18 +13,27 @@ export default function Navbar({ titulo, subtitulo, acciones }) {
     navigate("/");
   }
 
+  const contenidoTitulo = (
+    <>
+      <span className="navbar-title-text">{titulo}</span>
+      {subtitulo && <span className="navbar-subtitle">{subtitulo}</span>}
+    </>
+  );
+
   return (
     <header className="navbar">
       <div className="navbar-left">
         <Link to="/" className="navbar-brand">
           <span className="navbar-brand-wordmark">Agisad</span>
         </Link>
-        {titulo && (
-          <div className="navbar-title">
-            <span className="navbar-title-text">{titulo}</span>
-            {subtitulo && <span className="navbar-subtitle">{subtitulo}</span>}
-          </div>
-        )}
+        {titulo &&
+          (tituloTo ? (
+            <Link to={tituloTo} className="navbar-title navbar-title-link" title="Ir a mi panel">
+              {contenidoTitulo}
+            </Link>
+          ) : (
+            <div className="navbar-title">{contenidoTitulo}</div>
+          ))}
       </div>
 
       <div className="navbar-right">

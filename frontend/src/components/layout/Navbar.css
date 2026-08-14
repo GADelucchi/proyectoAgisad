@@ -57,6 +57,26 @@
   color: var(--text-muted);
 }
 
+.navbar-title-link {
+  text-decoration: none;
+  border-radius: 8px;
+  padding-right: 0.6rem;
+  transition: background 0.15s ease;
+}
+
+.navbar-title-link:hover {
+  background: var(--primary-light);
+}
+
+.navbar-title-link:hover .navbar-title-text {
+  color: var(--primary);
+}
+
+.navbar-title-link:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
 .navbar-right {
   display: flex;
   align-items: center;

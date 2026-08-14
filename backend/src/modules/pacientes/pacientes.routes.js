@@ -12,6 +12,13 @@ router.get(
   ctrl.list
 )
 
+// Panel del paciente autenticado. Declaradas antes de /:id para que no las capture.
+router.get('/me', requireAuth, requireRoles('paciente'), ctrl.getMe)
+router.patch('/me', requireAuth, requireRoles('paciente'), ctrl.patchMe)
+router.get('/me/recetas', requireAuth, requireRoles('paciente'), ctrl.listMyRecetas)
+router.get('/me/mensajes', requireAuth, requireRoles('paciente'), ctrl.listMyMensajes)
+router.get('/obras-sociales', requireAuth, ctrl.listObrasSociales)
+
 // POST /api/pacientes/medicos/:id_medico/recetas
 router.post(
   '/medicos/:id_medico/recetas',
