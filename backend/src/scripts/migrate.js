@@ -30,6 +30,7 @@ const MIGRATIONS = [
   '014_membresia_planes_vigencia_y_permisos.sql',
   '015_medico_recetas_mail_config.sql',
   '016_trial_period.sql',
+  '017_add_dni_to_medicos.sql',
 ]
 
 async function ensureLogTable(conn) {
