@@ -169,11 +169,29 @@ async function updatePaciente(idPaciente, fields) {
 }
 
 async function listObrasSociales() {
+  // "Sin cobertura" se representa con id_obra_social NULL, no como una fila del catálogo.
   return query(
     `SELECT id_obra_social, nombre
      FROM obras_sociales
+     WHERE nombre <> 'Particular / Sin cobertura'
      ORDER BY nombre`
   )
+}
+
+/**
+ * Devuelve el id de la obra social, creándola si el nombre no estaba en el catálogo.
+ */
+async function ensureObraSocialByNombre(nombre) {
+  const limpio = String(nombre || '').trim().replace(/\s+/g, ' ')
+  if (!limpio) return null
+
+  const result = await query(
+    `INSERT INTO obras_sociales (nombre)
+     VALUES (:nombre)
+     ON DUPLICATE KEY UPDATE id_obra_social = LAST_INSERT_ID(id_obra_social)`,
+    { nombre: limpio }
+  )
+  return result.insertId
 }
 
 async function existsObraSocial(idObraSocial) {
@@ -355,4 +373,5 @@ module.exports = {
   findPrimeraClinicaByMedico,
   medicoTieneClinica,
   upsertPacienteVinculo,
+  ensureObraSocialByNombre,
 }

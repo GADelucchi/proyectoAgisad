@@ -27,8 +27,11 @@ const FORM_ALTA_VACIO = {
   telefono: '',
   fecha_nac: '',
   id_obra_social: '',
+  obra_social: '',
   nro_obra_social: '',
 }
+
+const OBRA_SOCIAL_OTRA = '__otra'
 
 export default function PacientesTab() {
   const { usuario } = useAuth()
@@ -133,6 +136,8 @@ export default function PacientesTab() {
 
   async function guardarPaciente(event) {
     event.preventDefault()
+    const otraObraSocial = formAlta.id_obra_social === OBRA_SOCIAL_OTRA
+
     setGuardandoAlta(true)
     setMensajeAlta('')
     try {
@@ -143,7 +148,8 @@ export default function PacientesTab() {
         email: formAlta.email.trim() || null,
         telefono: formAlta.telefono.trim() || null,
         fecha_nac: formAlta.fecha_nac || null,
-        id_obra_social: formAlta.id_obra_social || null,
+        id_obra_social: otraObraSocial ? null : formAlta.id_obra_social || null,
+        obra_social: otraObraSocial ? formAlta.obra_social.trim() : null,
         nro_obra_social: formAlta.nro_obra_social.trim() || null,
       })
       setMostrarAlta(false)
@@ -153,7 +159,14 @@ export default function PacientesTab() {
           ? `${nombreCompleto(creado)} ya estaba registrado en el sistema y se agregó a tu listado.`
           : `${nombreCompleto(creado)} se agregó a tu listado.`
       )
-      await load()
+      await Promise.all([
+        load(),
+        otraObraSocial
+          ? pacientesApi.listarObrasSociales()
+            .then((rows) => setObrasSociales(Array.isArray(rows) ? rows : []))
+            .catch(() => {})
+          : null,
+      ])
     } catch (err) {
       setMensajeAlta(err?.message || 'No se pudo agregar el paciente.')
     } finally {
@@ -298,6 +311,7 @@ export default function PacientesTab() {
                 onChange={(e) => setFormAlta({
                   ...formAlta,
                   id_obra_social: e.target.value,
+                  obra_social: '',
                   nro_obra_social: e.target.value ? formAlta.nro_obra_social : '',
                 })}
               >
@@ -305,8 +319,24 @@ export default function PacientesTab() {
                 {obrasSociales.map((os) => (
                   <option key={os.id_obra_social} value={String(os.id_obra_social)}>{os.nombre}</option>
                 ))}
+                <option value={OBRA_SOCIAL_OTRA}>Otra (escribirla)</option>
               </select>
             </div>
+
+            {formAlta.id_obra_social === OBRA_SOCIAL_OTRA && (
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" htmlFor="alta-obra-social-nombre">Nombre de la obra social</label>
+                <input
+                  id="alta-obra-social-nombre"
+                  className="form-input"
+                  maxLength={120}
+                  placeholder="Se agrega a la lista para el próximo paciente"
+                  value={formAlta.obra_social}
+                  onChange={(e) => setFormAlta({ ...formAlta, obra_social: e.target.value })}
+                  required
+                />
+              </div>
+            )}
 
             <div className="form-group" style={{ margin: 0 }}>
               <label className="form-label" htmlFor="alta-afiliado">N° de afiliado</label>

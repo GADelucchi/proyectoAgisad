@@ -21,6 +21,7 @@ const {
   findPrimeraClinicaByMedico,
   medicoTieneClinica,
   upsertPacienteVinculo,
+  ensureObraSocialByNombre,
 } = require('./pacientes.repository')
 const { sendRecetaSolicitudEmail, sendPacienteMensajeEmail } = require('../../utils/mailer')
 const { assertMembershipNotExpiredByMedicoId } = require('../membresias/membresias.service')
@@ -105,6 +106,12 @@ async function createPacienteManual({ fields = {}, requesterIdUsuario, requester
     ? validateEmail(fields.email)
     : `paciente.${dni}@sin-email.local`
 
+  const idObraSocial = fields.id_obra_social
+    ? Number(fields.id_obra_social)
+    : await ensureObraSocialByNombre(
+      validateTextField(fields.obra_social, 120, 'La obra social')
+    )
+
   const { id_usuario: idUsuario } = await registerPaciente({
     email,
     // El paciente nunca recibe esta clave: para entrar debe usar "olvidé mi contraseña".
@@ -115,7 +122,7 @@ async function createPacienteManual({ fields = {}, requesterIdUsuario, requester
     telefono: fields.telefono || null,
     fecha_nac: fields.fecha_nac ? validateDate(fields.fecha_nac, 'La fecha de nacimiento') : null,
     ...(await normalizePerfilFields({
-      id_obra_social: fields.id_obra_social ?? null,
+      id_obra_social: idObraSocial,
       nro_obra_social: fields.nro_obra_social,
     })),
   })

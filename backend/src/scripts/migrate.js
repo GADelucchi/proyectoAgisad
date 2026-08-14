@@ -33,6 +33,7 @@ const MIGRATIONS = [
   '017_add_dni_to_medicos.sql',
   '018_turnos_estados_alineacion.sql',
   '019_turnos_hora_fin_fix.sql',
+  '020_obras_sociales_sin_cobertura.sql',
 ]
 
 async function ensureLogTable(conn) {

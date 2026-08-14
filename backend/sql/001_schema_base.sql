@@ -71,8 +71,7 @@ VALUES
   ('IOMA'),
   ('PAMI'),
   ('Galeno'),
-  ('Medicus'),
-  ('Particular / Sin cobertura');
+  ('Medicus');
 
 -- --------------------------------------------------------
 -- Usuarios (tabla base de autenticación)
