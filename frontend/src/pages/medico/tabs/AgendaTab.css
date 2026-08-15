@@ -98,6 +98,15 @@
 .agenda-slot.ocupado.externo { background: color-mix(in oklab, var(--warning-light) 35%, transparent); }
 .agenda-slot.libre { background: color-mix(in oklab, var(--success-light) 55%, transparent); }
 .agenda-slot.bloqueado { background: color-mix(in oklab, var(--warning-light) 55%, transparent); }
+/* La barra lateral distingue el turno cumplido del slot libre, que tambien es verde. */
+.agenda-slot.ocupado.asistio {
+  background: color-mix(in oklab, var(--success-light) 85%, transparent);
+  box-shadow: inset 3px 0 0 var(--success);
+}
+.agenda-slot.ocupado.ausente {
+  background: color-mix(in oklab, var(--error-light) 75%, transparent);
+  box-shadow: inset 3px 0 0 var(--error);
+}
 
 .agenda-slot-hora {
   font-size: 0.88rem;
@@ -135,6 +144,7 @@
 .agenda-accion-btn.bloquear   { border-color: var(--warning); color: var(--warning); background: var(--warning-light); }
 .agenda-accion-btn.agendar    { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
 .agenda-accion-btn:disabled   { opacity: 0.6; cursor: not-allowed; }
+.agenda-accion-btn.marcado    { opacity: 0.45; cursor: default; }
 
 .agenda-agendar-form {
   display: flex;

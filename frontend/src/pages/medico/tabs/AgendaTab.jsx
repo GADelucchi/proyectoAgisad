@@ -100,6 +100,13 @@ function estadoLabel(estado) {
   return 'Pendiente'
 }
 
+// Asistio y no asistio se comunican con el color del slot, así que no repiten badge.
+function claseEstadoTurno(estado) {
+  if (estado === 'completado') return 'asistio'
+  if (estado === 'ausente') return 'ausente'
+  return ''
+}
+
 function ocupaSlot(estado) {
   return estado !== 'cancelado_clinica' && estado !== 'cancelado_paciente'
 }
@@ -419,7 +426,8 @@ export default function AgendaTab({ doctorId, readOnly = false, onResumenDia }) 
                     ? 'bloqueado'
                     : tipo === 'otra-clinica'
                       ? 'ocupado externo'
-                      : 'ocupado'
+                      : `ocupado ${claseEstadoTurno(turno?.estado)}`.trim()
+                const marcado = claseEstadoTurno(turno?.estado)
 
                 return (
                   <div key={`${c.id}-${key}-${slot.hora}`} className={`agenda-slot ${claseSlot}`}>
@@ -429,7 +437,9 @@ export default function AgendaTab({ doctorId, readOnly = false, onResumenDia }) 
                         <>
                           <div>
                             <span className="badge badge-primary" style={{ marginRight: 6 }}>Consulta</span>
-                            <span className="badge badge-warning" style={{ marginRight: 6 }}>{estadoLabel(turno.estado)}</span>
+                            {!marcado && (
+                              <span className="badge badge-warning" style={{ marginRight: 6 }}>{estadoLabel(turno.estado)}</span>
+                            )}
                             <span className="agenda-paciente">{`${turno.paciente_nombre} ${turno.paciente_apellido}`}</span>
                           </div>
                           {turno.hora_fin && (
@@ -437,8 +447,20 @@ export default function AgendaTab({ doctorId, readOnly = false, onResumenDia }) 
                           )}
                           {!readOnly && (
                             <div className="agenda-slot-acciones">
-                              <button className="agenda-accion-btn asistio" onClick={() => marcarEstado(turno.id_turno, 'completado')}>Asistio</button>
-                              <button className="agenda-accion-btn no-asistio" onClick={() => marcarEstado(turno.id_turno, 'ausente')}>No asistio</button>
+                              <button
+                                className={`agenda-accion-btn asistio ${marcado === 'asistio' ? 'marcado' : ''}`}
+                                disabled={marcado === 'asistio'}
+                                onClick={() => marcarEstado(turno.id_turno, 'completado')}
+                              >
+                                Asistio
+                              </button>
+                              <button
+                                className={`agenda-accion-btn no-asistio ${marcado === 'ausente' ? 'marcado' : ''}`}
+                                disabled={marcado === 'ausente'}
+                                onClick={() => marcarEstado(turno.id_turno, 'ausente')}
+                              >
+                                No asistio
+                              </button>
                               <button className="agenda-accion-btn cancelar" onClick={() => marcarEstado(turno.id_turno, 'cancelado_clinica')}>Cancelar</button>
                             </div>
                           )}
