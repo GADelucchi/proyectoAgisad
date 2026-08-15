@@ -457,36 +457,38 @@ export default function PacientesTab() {
         <p style={{ padding: '0.6rem 1rem', fontSize: '0.8rem', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>
           Mostrando {filtrados.length} de {pacientes.length} pacientes
         </p>
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Nombre</th>
-              <th>DNI</th>
-              <th>Telefono</th>
-              <th>Obra social</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtrados.map((p) => (
-              <tr key={p.id_paciente}>
-                <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{nombreCompleto(p)}</td>
-                <td>{p.dni || '-'}</td>
-                <td>{p.telefono || '-'}</td>
-                <td>{p.obra_social || '-'}</td>
-                <td>
-                  <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                    <Button variant="secondary" size="sm" onClick={() => abrirAgendar(p)}>
-                      <CalendarPlus size={14} /> Agendar
-                    </Button>
-                    <Button variant="ghost" size="sm" disabled>Historial</Button>
-                    <Button variant="ghost" size="sm" disabled>Editar</Button>
-                  </div>
-                </td>
+        <div className="pacientes-tabla-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>DNI</th>
+                <th>Telefono</th>
+                <th>Obra social</th>
+                <th>Acciones</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filtrados.map((p) => (
+                <tr key={p.id_paciente}>
+                  <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{nombreCompleto(p)}</td>
+                  <td>{p.dni || '-'}</td>
+                  <td>{p.telefono || '-'}</td>
+                  <td>{p.obra_social || '-'}</td>
+                  <td>
+                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                      <Button variant="secondary" size="sm" onClick={() => abrirAgendar(p)}>
+                        <CalendarPlus size={14} /> Agendar
+                      </Button>
+                      <Button variant="ghost" size="sm" disabled>Historial</Button>
+                      <Button variant="ghost" size="sm" disabled>Editar</Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         {filtrados.length === 0 && !loading && (
           <p style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
             No hay pacientes para mostrar.

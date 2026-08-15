@@ -153,13 +153,13 @@ async function listHistorialByMedicoRange({ idMedico, desde, hasta }) {
             DATE_FORMAT(t.fecha, '%d/%m/%Y') AS fecha,
             DATE_FORMAT(t.fecha, '%Y-%m-%d') AS fecha_iso,
             DATE_FORMAT(t.hora_inicio, '%H:%i') AS hora,
-            h.estado_anterior,
+            h.estado_previo AS estado_anterior,
             h.estado_nuevo AS estado,
             t.id_clinica,
             c.nombre AS clinica_nombre,
             p.nombre AS paciente_nombre,
             p.apellido AS paciente_apellido,
-            h.modificado_por,
+            h.id_usuario AS modificado_por,
             r.nombre AS actor_rol,
             u.username AS actor_username,
             u.email AS actor_email,
@@ -170,7 +170,7 @@ async function listHistorialByMedicoRange({ idMedico, desde, hasta }) {
      INNER JOIN turnos t ON t.id_turno = h.id_turno
      INNER JOIN pacientes p ON p.id_paciente = t.id_paciente
      LEFT JOIN clinicas c ON c.id_clinica = t.id_clinica
-     LEFT JOIN usuarios u ON u.id_usuario = h.modificado_por
+     LEFT JOIN usuarios u ON u.id_usuario = h.id_usuario
      LEFT JOIN roles r ON r.id_rol = u.id_rol
      WHERE t.id_medico = :idMedico
        AND t.fecha BETWEEN :desde AND :hasta

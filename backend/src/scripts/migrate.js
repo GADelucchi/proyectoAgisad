@@ -34,6 +34,7 @@ const MIGRATIONS = [
   '018_turnos_estados_alineacion.sql',
   '019_turnos_hora_fin_fix.sql',
   '020_obras_sociales_sin_cobertura.sql',
+  '021_turnos_historial_estados.sql',
 ]
 
 async function ensureLogTable(conn) {

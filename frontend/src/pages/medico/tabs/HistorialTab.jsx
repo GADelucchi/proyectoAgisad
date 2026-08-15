@@ -95,34 +95,36 @@ export default function HistorialTab() {
         />
       </div>
 
-      <div className="surface-raised historial-tabla-wrap">
+      <div className="surface-raised">
         <p style={{ padding: '0.6rem 1rem', fontSize: '0.8rem', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>
           Mostrando {filtrados.length} eventos
         </p>
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Fecha turno</th>
-              <th>Evento</th>
-              <th>Paciente</th>
-              <th>Consultorio</th>
-              <th>Realizado por</th>
-              <th>Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtrados.map((e) => (
-              <tr key={e.id_historial}>
-                <td style={{ whiteSpace: 'nowrap', fontSize: '0.82rem' }}>{`${e.fecha} ${e.hora}`}</td>
-                <td><span className={`badge ${BADGE_EVENTO[e.estado] || 'badge-muted'}`}>{asLabel(e.estado)}</span></td>
-                <td>{`${e.paciente_nombre || ''} ${e.paciente_apellido || ''}`.trim()}</td>
-                <td>{e.clinica_nombre || `Consultorio ${e.id_clinica}`}</td>
-                <td>{actorLabel(e)}</td>
-                <td><span className={`badge ${BADGE_EVENTO[e.estado] || 'badge-muted'}`}>{e.estado}</span></td>
+        <div className="historial-tabla-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Fecha turno</th>
+                <th>Evento</th>
+                <th>Paciente</th>
+                <th>Consultorio</th>
+                <th>Realizado por</th>
+                <th>Estado</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filtrados.map((e) => (
+                <tr key={e.id_historial}>
+                  <td style={{ whiteSpace: 'nowrap', fontSize: '0.82rem' }}>{`${e.fecha} ${e.hora}`}</td>
+                  <td><span className={`badge ${BADGE_EVENTO[e.estado] || 'badge-muted'}`}>{asLabel(e.estado)}</span></td>
+                  <td>{`${e.paciente_nombre || ''} ${e.paciente_apellido || ''}`.trim()}</td>
+                  <td>{e.clinica_nombre || `Consultorio ${e.id_clinica}`}</td>
+                  <td>{actorLabel(e)}</td>
+                  <td><span className={`badge ${BADGE_EVENTO[e.estado] || 'badge-muted'}`}>{e.estado}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )

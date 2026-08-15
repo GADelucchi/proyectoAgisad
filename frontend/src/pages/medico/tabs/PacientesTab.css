@@ -73,6 +73,8 @@
   margin: 0;
 }
 
+.pacientes-tabla-wrap { overflow-x: auto; }
+
 @media (max-width: 760px) {
   .pacientes-header,
   .paciente-alta-actions {

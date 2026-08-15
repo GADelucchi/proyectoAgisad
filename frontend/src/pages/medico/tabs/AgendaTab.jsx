@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAuth } from '../../../context/AuthContext'
 import { medicosApi } from '../../../services/medicos.api'
@@ -104,7 +104,7 @@ function ocupaSlot(estado) {
   return estado !== 'cancelado_clinica' && estado !== 'cancelado_paciente'
 }
 
-export default function AgendaTab({ doctorId, readOnly = false }) {
+export default function AgendaTab({ doctorId, readOnly = false, onResumenDia }) {
   const { usuario } = useAuth()
   const isSelfMedico = !doctorId && usuario?.rol === 'medico'
   const ownerDoctorId = doctorId || null
@@ -251,7 +251,7 @@ export default function AgendaTab({ doctorId, readOnly = false }) {
    * Un slot se ocupa si su rango pisa el de un turno, aunque el turno arranque en otro slot
    * o esté agendado en otra clínica (el médico no puede estar en dos lugares a la vez).
    */
-  function resolverSlot({ slot, idClinica, fechaIso }) {
+  const resolverSlot = useCallback(({ slot, idClinica, fechaIso }) => {
     const rango = { inicio: toMinutes(slot.hora), fin: toMinutes(slot.hora) + (slot.duracion || 30) }
 
     const superpuestos = (turnosDelDia[fechaIso] || []).filter((t) => seSuperpone(rango, rangoTurno(t)))
@@ -274,7 +274,29 @@ export default function AgendaTab({ doctorId, readOnly = false }) {
     })
 
     return { tipo: bloqueado ? 'bloqueado' : 'libre' }
-  }
+  }, [turnosDelDia, bloqueosByClinicaAndDate])
+
+  const resumenDia = useMemo(() => {
+    const fechaIso = fechaStr(fecha)
+    let libres = 0
+
+    for (const consultorio of consultorios) {
+      for (const slot of (slotsByClinica[consultorio.id] || [])) {
+        if (resolverSlot({ slot, idClinica: consultorio.id, fechaIso }).tipo === 'libre') libres += 1
+      }
+    }
+
+    return {
+      fechaIso,
+      fechaLabel: formatDateDdMmYyyy(fecha),
+      turnos: (turnosDelDia[fechaIso] || []).length,
+      libres,
+    }
+  }, [fecha, consultorios, slotsByClinica, turnosDelDia, resolverSlot])
+
+  useEffect(() => {
+    onResumenDia?.(resumenDia)
+  }, [onResumenDia, resumenDia])
 
   async function marcarEstado(idTurno, estado) {
     try {

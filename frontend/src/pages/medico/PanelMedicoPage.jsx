@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { medicosApi } from '../../services/medicos.api'
-import { turnosApi } from '../../services/turnos.api'
 import { formatDateDdMmYyyy } from '../../utils/dateFormat'
 import AgendaTab       from './tabs/AgendaTab'
 import ConfiguracionTab from './tabs/ConfiguracionTab'
@@ -18,52 +17,34 @@ const TABS = [
   { id: 'historial',      label: 'Historial' },
 ]
 
-function toIsoDate(date) {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
-
 export default function PanelMedicoPage() {
   const { usuario } = useAuth()
   const [tab, setTab] = useState('agenda')
-  const [kpis, setKpis] = useState({ total: 0, tiposConfigurados: 0, libres: 0 })
   const hoy = formatDateDdMmYyyy(new Date())
-  const todayDate = new Date()
-  const todayIso = toIsoDate(todayDate)
+  const [kpis, setKpis] = useState({ turnos: 0, tiposConfigurados: 0, libres: 0, fechaLabel: hoy })
   const isMedico = usuario?.rol === 'medico'
   const permiteTurnos = Boolean(usuario?.membresia?.permite_turnos)
 
-  useEffect(() => {
+  const cargarTiposTurno = useCallback(async () => {
     if (!isMedico || !usuario?.idUsuario || !permiteTurnos) return
 
-    let cancelled = false
-    async function loadKpis() {
-      try {
-        const [consultorios, turnos, turnosConfig] = await Promise.all([
-          medicosApi.listMyClinicas(),
-          turnosApi.listarPorMedico({ desde: todayIso, hasta: todayIso }),
-          medicosApi.getMyTurnosConfig().catch(() => null),
-        ])
-
-        if (cancelled) return
-        const total = Array.isArray(turnos) ? turnos.length : 0
-        const tiposConfigurados = Array.isArray(turnosConfig?.tipos_turno) ? turnosConfig.tipos_turno.length : 0
-        const capacidad = Array.isArray(consultorios) ? consultorios.length * 16 : 0
-        setKpis({ total, tiposConfigurados, libres: Math.max(capacidad - total, 0) })
-      } catch {
-        if (!cancelled) {
-          setKpis({ total: 0, tiposConfigurados: 0, libres: 0 })
-        }
-      }
+    try {
+      const turnosConfig = await medicosApi.getMyTurnosConfig()
+      const tipos = Array.isArray(turnosConfig?.tipos_turno) ? turnosConfig.tipos_turno.length : 0
+      setKpis((prev) => ({ ...prev, tiposConfigurados: tipos }))
+    } catch {
+      setKpis((prev) => ({ ...prev, tiposConfigurados: 0 }))
     }
+  }, [isMedico, usuario?.idUsuario, permiteTurnos])
 
-    loadKpis()
-    return () => {
-      cancelled = true
-    }
-  }, [isMedico, usuario?.idUsuario, todayIso, permiteTurnos])
+  // La agenda es la fuente de verdad de la grilla, así que los KPIs siguen al día que muestra.
+  const recibirResumenAgenda = useCallback(({ turnos, libres, fechaLabel }) => {
+    setKpis((prev) => ({ ...prev, turnos, libres, fechaLabel }))
+  }, [])
+
+  useEffect(() => {
+    cargarTiposTurno()
+  }, [cargarTiposTurno])
 
   useEffect(() => {
     if (!permiteTurnos && ['agenda', 'historial'].includes(tab)) {
@@ -84,8 +65,8 @@ export default function PanelMedicoPage() {
       {/* KPIs */}
       <div className="panel-kpis">
         <div className="kpi-card surface-raised">
-          <span className="kpi-valor">{kpis.total}</span>
-          <span className="kpi-label">Turnos totales</span>
+          <span className="kpi-valor">{kpis.turnos}</span>
+          <span className="kpi-label">{`Turnos ${kpis.fechaLabel}`}</span>
         </div>
         <div className="kpi-card surface-raised">
           <span className="kpi-valor">{kpis.tiposConfigurados}</span>
@@ -93,7 +74,7 @@ export default function PanelMedicoPage() {
         </div>
         <div className="kpi-card surface-raised">
           <span className="kpi-valor kpi-accent">{kpis.libres}</span>
-          <span className="kpi-label">Libres hoy</span>
+          <span className="kpi-label">{`Libres ${kpis.fechaLabel}`}</span>
         </div>
       </div>
 
@@ -114,9 +95,9 @@ export default function PanelMedicoPage() {
 
       {/* Contenido */}
       <div className="panel-tab-content">
-        {tab === 'agenda'        && permiteTurnos && <AgendaTab />}
+        {tab === 'agenda'        && permiteTurnos && <AgendaTab onResumenDia={recibirResumenAgenda} />}
         {tab === 'recetas'       && <RecetasTab />}
-        {tab === 'configuracion' && <ConfiguracionTab permiteTurnos={permiteTurnos} />}
+        {tab === 'configuracion' && <ConfiguracionTab permiteTurnos={permiteTurnos} onConfigChange={cargarTiposTurno} />}
         {tab === 'pacientes'     && <PacientesTab />}
         {tab === 'historial'     && permiteTurnos && <HistorialTab />}
       </div>

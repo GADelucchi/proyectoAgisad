@@ -94,7 +94,7 @@ function mapTipoTurno(row, index) {
   }
 }
 
-export default function ConfiguracionTab({ permiteTurnos = true }) {
+export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange }) {
   const { usuario } = useAuth()
   const doctorId = String(usuario?.idUsuario || usuario?.id || '')
   const permiteAsistentes = Boolean(usuario?.membresia?.permite_asistentes)
@@ -447,6 +447,7 @@ export default function ConfiguracionTab({ permiteTurnos = true }) {
       setTiposTurno(nextTipos.length > 0 ? nextTipos : [turnoTipoFormBase()])
       setTurnosEnConflicto([])
       setEstadoTurnos('Configuración de turnos guardada correctamente.')
+      onConfigChange?.()
     } catch (err) {
       if (err?.status === 409 && Array.isArray(err?.details?.turnos_afectados)) {
         setTurnosEnConflicto(err.details.turnos_afectados)

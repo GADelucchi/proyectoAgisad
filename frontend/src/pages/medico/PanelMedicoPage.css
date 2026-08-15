@@ -12,7 +12,8 @@
 /* KPIs */
 .panel-kpis {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* minmax(0,...) evita que una etiqueta larga empuje las tarjetas fuera de la grilla. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
@@ -42,12 +43,22 @@
 /* Tabs */
 .panel-tabs {
   display: flex;
-  border-bottom: 1px solid var(--border);
   gap: 0;
   margin-bottom: 1.5rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* Inset en vez de border para que la línea no se corte con el scroll horizontal. */
+  box-shadow: inset 0 -1px 0 var(--border);
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
 }
 
+.panel-tabs::-webkit-scrollbar { display: none; }
+
 .panel-tab-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
   padding: 0.7rem 1.25rem;
   background: none;
   border: none;
@@ -58,7 +69,6 @@
   color: var(--text-secondary);
   cursor: pointer;
   transition: color var(--transition), border-color var(--transition);
-  margin-bottom: -1px;
 }
 .panel-tab-btn:hover { color: var(--primary); }
 .panel-tab-btn.active {
@@ -67,3 +77,28 @@
 }
 
 .panel-tab-content { min-height: 400px; }
+
+@media (max-width: 560px) {
+  .panel-tab-btn {
+    padding: 0.7rem 0.85rem;
+    font-size: 0.85rem;
+  }
+
+  .panel-kpis {
+    grid-template-columns: 1fr;
+    gap: 0.6rem;
+  }
+
+  /* Fila con la etiqueta a la izquierda y el número a la derecha. */
+  .kpi-card {
+    flex-direction: row-reverse;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.85rem 1.1rem;
+  }
+
+  .kpi-valor { font-size: 1.6rem; line-height: 1; }
+
+  .kpi-label { text-align: left; }
+}
