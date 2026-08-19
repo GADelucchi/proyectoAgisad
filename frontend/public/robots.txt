@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+
+# Zonas privadas: requieren sesión y no aportan a la búsqueda.
+Disallow: /medico
+Disallow: /asistente
+Disallow: /admin
+Disallow: /gerente
+Disallow: /paciente
+Disallow: /nueva-password
+Disallow: /verificar-email
+Disallow: /recuperar-password
+
+Sitemap: https://agisad.ar/sitemap.xml

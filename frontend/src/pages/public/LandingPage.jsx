@@ -11,8 +11,8 @@ const FEATURES = [
   {
     icon: "💬",
     title: "Recordatorios automáticos",
-    desc: "Mensajes automáticos 24 y 2 horas antes del turno. Confirmación con un clic. Reducí el ausentismo hasta un 60%.",
-    tag: "Integración oficial →",
+    desc: "Mensajes automáticos 24 y 2 horas antes del turno, con confirmación en un clic. Vos relajate: de recordarlo se encarga Agisad.",
+    tag: "Recordatorios por email →",
   },
   {
     icon: "🏥",
@@ -123,13 +123,6 @@ const TESTIMONIALS = [
     name: "Dra. Fabiana Marmissolle",
     role: "Oncóloga · La Plata",
   },
-  {
-    stars: "★★★★★",
-    text: "Somos varios profesionales y asistentes. Con Agisad centralizamos permisos y turnos sin perder control de cada médico.",
-    initials: "SB",
-    name: "Dra. Solange B.",
-    role: "Pediatra · Buenos Aires",
-  },
 ];
 
 export default function LandingPage() {
@@ -166,27 +159,18 @@ export default function LandingPage() {
                   Ver planes
                 </a>
               </div>
-              <div className="tm-hero-trust">
-                <div className="tm-hero-trust-avatars">
-                  <div className="av">MG</div>
-                  <div className="av">LF</div>
-                  <div className="av">PV</div>
-                  <div className="av">+</div>
-                </div>
-                <span>
-                  <span className="tm-hero-trust-num">
-                    +1.200 profesionales
-                  </span>{" "}
-                  de salud confían en Agisad
-                </span>
-              </div>
+              <ul className="tm-hero-trust">
+                <li>30 días de prueba gratis</li>
+                <li>Sin tarjeta de crédito</li>
+                <li>Cancelás cuando querés</li>
+              </ul>
             </div>
 
             <div className="tm-hero-visual">
               <div className="tm-mockup-wrap">
                 <div className="tm-stat-card">
-                  <div className="tm-stat-card-num">↓ 58%</div>
-                  <div className="tm-stat-card-label">ausentismo</div>
+                  <div className="tm-stat-card-num">24/7</div>
+                  <div className="tm-stat-card-label">turnos online</div>
                 </div>
                 <div className="tm-mockup">
                   <div className="tm-mockup-topbar">
@@ -254,14 +238,14 @@ export default function LandingPage() {
         <div className="container">
           <div className="tm-strip-inner">
             <span className="tm-strip-label">
-              Usado en clínicas de todo el país
+              Pensado para el consultorio argentino
             </span>
             <div className="tm-strip-logos">
-              <span className="tm-strip-logo">Clínica del Sol</span>
-              <span className="tm-strip-logo">Centro Médico Norte</span>
-              <span className="tm-strip-logo">Consultorio Integral</span>
-              <span className="tm-strip-logo">Salud & Bienestar</span>
-              <span className="tm-strip-logo">Clínica San Martín</span>
+              <span className="tm-strip-logo">Obras sociales y prepagas</span>
+              <span className="tm-strip-logo">Recetas digitales</span>
+              <span className="tm-strip-logo">Multi-consultorio</span>
+              <span className="tm-strip-logo">Soporte en español</span>
+              <span className="tm-strip-logo">Precios en pesos</span>
             </div>
           </div>
         </div>
@@ -373,7 +357,7 @@ export default function LandingPage() {
         <div className="container">
           <div className="tm-head">
             <span className="tm-label">Testimonios</span>
-            <h2>Lo que dicen nuestros profesionales</h2>
+            <h2>Quiénes ya lo están usando</h2>
           </div>
           <div className="tm-testi-grid">
             {TESTIMONIALS.map((t) => (

@@ -20,6 +20,24 @@
   gap: 0.2rem;
 }
 
+.public-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.public-footer-links a {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.public-footer-links a:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
 .public-footer-dev {
   font-size: 0.76rem;
   letter-spacing: 0.04em;
