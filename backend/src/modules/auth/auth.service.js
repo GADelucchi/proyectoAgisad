@@ -399,6 +399,9 @@ async function registerPaciente(input) {
       throw new HttpError(400, `Falta el campo obligatorio: ${field}`)
     }
   }
+  if (!input.acepta_tyc) {
+    throw new HttpError(400, 'Tenés que aceptar los términos y condiciones y la política de privacidad')
+  }
 
   // Validar inputs específicos
   const validatedDNI = validateDNI(input.dni)
@@ -468,6 +471,9 @@ async function registerMedico(input) {
     if (!input[field]) {
       throw new HttpError(400, `Falta el campo obligatorio: ${field}`)
     }
+  }
+  if (!input.acepta_tyc) {
+    throw new HttpError(400, 'Tenés que aceptar los términos y condiciones y la política de privacidad')
   }
 
   // Validar inputs específicos
@@ -588,6 +594,9 @@ async function registerGerente(input) {
     if (!input[field]) {
       throw new HttpError(400, `Falta el campo obligatorio: ${field}`)
     }
+  }
+  if (!input.acepta_tyc) {
+    throw new HttpError(400, 'Tenés que aceptar los términos y condiciones y la política de privacidad')
   }
 
   // Validar inputs específicos

@@ -67,6 +67,7 @@ export default function RegistroMedicoPage() {
     clinica_telefono: '',
     direccion: '',
   })
+  const [aceptaTyc, setAceptaTyc] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -98,6 +99,7 @@ export default function RegistroMedicoPage() {
 
     if (!form.password || form.password.length < 6) return 'La contraseña debe tener al menos 6 caracteres.'
     if (form.password !== form.confirmar) return 'Las contraseñas no coinciden.'
+    if (!aceptaTyc) return 'Tenés que aceptar los términos y condiciones y la política de privacidad.'
     return null
   }
 
@@ -131,7 +133,7 @@ export default function RegistroMedicoPage() {
           provincia: form.provincia,
           ciudad: form.ciudad,
           direccion: form.direccion,
-          acepta_tyc: true,
+          acepta_tyc: aceptaTyc,
         })
       } else {
         await authApi.registerMedico({
@@ -148,7 +150,7 @@ export default function RegistroMedicoPage() {
           ciudad: form.ciudad,
           bio: form.bio || null,
           plan: form.plan,
-          acepta_tyc: true,
+          acepta_tyc: aceptaTyc,
         })
       }
 
@@ -315,9 +317,21 @@ export default function RegistroMedicoPage() {
             </div>
           </div>
 
+          <label className="auth-checkbox-row">
+            <input
+              type="checkbox"
+              checked={aceptaTyc}
+              onChange={e => { setAceptaTyc(e.target.checked); setError('') }}
+            />
+            <span>
+              Acepto los <Link to="/terminos" target="_blank" rel="noopener noreferrer">términos y condiciones</Link> y la{' '}
+              <Link to="/privacidad" target="_blank" rel="noopener noreferrer">política de privacidad</Link>.
+            </span>
+          </label>
+
           {error && <p className="auth-error">{error}</p>}
 
-          <Button type="submit" fullWidth disabled={loading}>
+          <Button type="submit" fullWidth disabled={loading || !aceptaTyc}>
             {loading ? 'Creando cuenta...' : planEmpresarial ? 'Crear cuenta de gerente' : 'Crear cuenta de médico'}
           </Button>
         </form>

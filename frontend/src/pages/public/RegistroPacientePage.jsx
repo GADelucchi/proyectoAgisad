@@ -22,6 +22,7 @@ export default function RegistroPacientePage() {
     password: '',
     confirmar: '',
   })
+  const [aceptaTyc, setAceptaTyc] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -38,6 +39,7 @@ export default function RegistroPacientePage() {
     if (!form.email || !form.email.includes('@')) return 'Email inválido.'
     if (!form.password || form.password.length < 6) return 'La contraseña debe tener al menos 6 caracteres.'
     if (form.password !== form.confirmar) return 'Las contraseñas no coinciden.'
+    if (!aceptaTyc) return 'Tenés que aceptar los términos y condiciones y la política de privacidad.'
     return null
   }
 
@@ -59,7 +61,7 @@ export default function RegistroPacientePage() {
         fecha_nac: form.fechaNacimiento || null,
         obra_social: form.obraSocial || null,
         nro_obra_social: form.nroAfiliado || null,
-        acepta_tyc: true,
+        acepta_tyc: aceptaTyc,
       })
       navigate('/verificar-email')
     } catch (apiErr) {
@@ -147,9 +149,21 @@ export default function RegistroPacientePage() {
             </div>
           </div>
 
+          <label className="auth-checkbox-row">
+            <input
+              type="checkbox"
+              checked={aceptaTyc}
+              onChange={e => { setAceptaTyc(e.target.checked); setError('') }}
+            />
+            <span>
+              Acepto los <Link to="/terminos" target="_blank" rel="noopener noreferrer">términos y condiciones</Link> y la{' '}
+              <Link to="/privacidad" target="_blank" rel="noopener noreferrer">política de privacidad</Link>.
+            </span>
+          </label>
+
           {error && <p className="auth-error">{error}</p>}
 
-          <Button type="submit" fullWidth disabled={loading}>
+          <Button type="submit" fullWidth disabled={loading || !aceptaTyc}>
             {loading ? 'Creando cuenta...' : 'Crear cuenta'}
           </Button>
         </form>

@@ -28,6 +28,7 @@ export default function RegistroGerentePage() {
     ciudad: 'La Plata',
     direccion: '',
   })
+  const [aceptaTyc, setAceptaTyc] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -43,6 +44,7 @@ export default function RegistroGerentePage() {
     if (!form.provincia || !form.ciudad || !form.direccion) return 'Completá ubicación de la clínica.'
     if (!form.password || form.password.length < 6) return 'La contraseña debe tener al menos 6 caracteres.'
     if (form.password !== form.confirmar) return 'Las contraseñas no coinciden.'
+    if (!aceptaTyc) return 'Tenés que aceptar los términos y condiciones y la política de privacidad.'
     return null
   }
 
@@ -70,7 +72,7 @@ export default function RegistroGerentePage() {
         provincia: form.provincia,
         ciudad: form.ciudad,
         direccion: form.direccion,
-        acepta_tyc: true,
+        acepta_tyc: aceptaTyc,
       })
       navigate('/login')
     } catch (apiErr) {
@@ -161,9 +163,21 @@ export default function RegistroGerentePage() {
             </div>
           </div>
 
+          <label className="auth-checkbox-row">
+            <input
+              type="checkbox"
+              checked={aceptaTyc}
+              onChange={e => { setAceptaTyc(e.target.checked); setError('') }}
+            />
+            <span>
+              Acepto los <Link to="/terminos" target="_blank" rel="noopener noreferrer">términos y condiciones</Link> y la{' '}
+              <Link to="/privacidad" target="_blank" rel="noopener noreferrer">política de privacidad</Link>.
+            </span>
+          </label>
+
           {error && <p className="auth-error">{error}</p>}
 
-          <Button type="submit" fullWidth disabled={loading}>
+          <Button type="submit" fullWidth disabled={loading || !aceptaTyc}>
             {loading ? 'Creando cuenta...' : 'Crear cuenta de gerente'}
           </Button>
         </form>
