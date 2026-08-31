@@ -1,6 +1,6 @@
 const HttpError = require('../../utils/httpError')
 const medicosRepo = require('./medicos.repository')
-const { assertUserFeatureByUserId } = require('../membresias/membresias.service')
+const { assertUserFeatureByUserId, assertOwnMembershipActive } = require('../membresias/membresias.service')
 
 function toMinutes(value) {
   const [h, m] = String(value).split(':').map(Number)
@@ -433,6 +433,10 @@ async function listMyClinicas({ requesterIdUsuario, requesterRol }) {
 
 async function createMyClinica({ input, requesterIdUsuario, requesterRol }) {
   const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+  // A diferencia del resto de las funciones (ensureTurnosFeatureForUser), crear una
+  // clínica propia requiere membresía propia: un médico cubierto por un gerente no
+  // puede agregar clínicas independientes de la que lo invitó.
+  await assertOwnMembershipActive(requesterIdUsuario, 'Agregar una clínica propia')
   await ensureTurnosFeatureForUser(requesterIdUsuario)
 
   const nombre = String(input?.nombre || '').trim()

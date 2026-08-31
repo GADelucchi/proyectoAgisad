@@ -112,4 +112,27 @@ async function sendPacienteMensajeEmail({ to, medico, paciente, asunto, mensaje 
   })
 }
 
-module.exports = { sendPasswordResetEmail, sendRecetaSolicitudEmail, sendPacienteMensajeEmail }
+async function sendInvitacionMedicoEmail({ to, gerente, clinica, link }) {
+  await transporter.sendMail({
+    from: env.MAIL_FROM,
+    to,
+    subject: `${gerente.nombre} ${gerente.apellido} te invitó a sumarte en Agisad`,
+    text: [
+      `${gerente.nombre} ${gerente.apellido} te invitó a atender en "${clinica.nombre}" a través de Agisad.`,
+      '',
+      'Hacé clic en el siguiente enlace para aceptar la invitación:',
+      link,
+      '',
+      'El enlace es personal, de un solo uso, y expira en 7 días.',
+      '',
+      '— Agisad',
+    ].join('\n'),
+  })
+}
+
+module.exports = {
+  sendPasswordResetEmail,
+  sendRecetaSolicitudEmail,
+  sendPacienteMensajeEmail,
+  sendInvitacionMedicoEmail,
+}

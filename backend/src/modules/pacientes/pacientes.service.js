@@ -22,7 +22,9 @@ const {
   medicoTieneClinica,
   upsertPacienteVinculo,
   ensureObraSocialByNombre,
+  pacienteVinculadoAMedico,
 } = require('./pacientes.repository')
+const { listTurnosByPaciente } = require('../turnos/turnos.repository')
 const { sendRecetaSolicitudEmail, sendPacienteMensajeEmail } = require('../../utils/mailer')
 const { assertMembershipNotExpiredByMedicoId } = require('../membresias/membresias.service')
 const { registerPaciente } = require('../auth/auth.service')
@@ -125,7 +127,7 @@ async function createPacienteManual({ fields = {}, requesterIdUsuario, requester
       id_obra_social: idObraSocial,
       nro_obra_social: fields.nro_obra_social,
     })),
-  })
+  }, { requireAceptaTyc: false })
 
   const creado = await findPacienteByUserId(idUsuario)
   await upsertPacienteVinculo({ idPaciente: creado.id_paciente, idMedico, idClinica })
@@ -162,23 +164,87 @@ async function getPaciente({ idPaciente, requesterIdUsuario, requesterRol }) {
     throw new HttpError(403, 'Sin permisos para ver ese perfil')
   }
 
+  // El médico solo puede ver pacientes vinculados a él (turno propio o alta manual)
+  if (requesterRol === 'medico') {
+    const idMedico = await findMedicoIdByUserId(requesterIdUsuario)
+    const vinculado = idMedico && await pacienteVinculadoAMedico({ idPaciente: paciente.id_paciente, idMedico })
+    if (!vinculado) {
+      throw new HttpError(403, 'Ese paciente no está vinculado a tu cuenta')
+    }
+  }
+
   return paciente
 }
 
 /**
- * Actualiza datos del paciente.
- * Solo el propio paciente puede modificar su perfil.
+ * Actualiza datos del paciente: el propio paciente, un admin, o el médico
+ * al que está vinculado (turno propio o alta manual).
  */
 async function patchPaciente({ idPaciente, fields, requesterIdUsuario, requesterRol }) {
   const paciente = await findPacienteById(Number(idPaciente))
   if (!paciente) throw new HttpError(404, 'Paciente no encontrado')
 
-  if (requesterRol !== 'admin' && paciente.id_usuario !== requesterIdUsuario) {
+  if (requesterRol === 'medico') {
+    const idMedico = await findMedicoIdByUserId(requesterIdUsuario)
+    const vinculado = idMedico && await pacienteVinculadoAMedico({ idPaciente: paciente.id_paciente, idMedico })
+    if (!vinculado) {
+      throw new HttpError(403, 'Ese paciente no está vinculado a tu cuenta')
+    }
+  } else if (requesterRol !== 'admin' && paciente.id_usuario !== requesterIdUsuario) {
     throw new HttpError(403, 'Solo podés editar tu propio perfil')
   }
 
   await updatePaciente(Number(idPaciente), await normalizePerfilFields(fields))
   return findPacienteById(Number(idPaciente))
+}
+
+/**
+ * Búsqueda exacta por DNI para autocompletar el alta manual: si el paciente
+ * ya existe en el sistema (con otro médico o el mismo), se reutilizan sus
+ * datos en vez de cargarlo de nuevo.
+ */
+async function buscarPacientePorDni({ dni, requesterRol }) {
+  if (requesterRol !== 'medico' && requesterRol !== 'asistente') {
+    throw new HttpError(403, 'Sin permisos para buscar pacientes')
+  }
+
+  const dniLimpio = String(dni || '').trim()
+  if (!/^\d{7,8}$/.test(dniLimpio)) {
+    throw new HttpError(400, 'DNI inválido')
+  }
+
+  const encontrado = await findPacienteByDni(dniLimpio)
+  if (!encontrado) return null
+
+  return findPacienteById(encontrado.id_paciente)
+}
+
+/**
+ * Historial de un paciente con el médico que lo consulta: turnos, recetas
+ * y mensajes que pasaron específicamente por ese médico (no los de otros).
+ */
+async function getHistorialPaciente({ idPaciente, requesterIdUsuario, requesterRol }) {
+  const paciente = await findPacienteById(Number(idPaciente))
+  if (!paciente) throw new HttpError(404, 'Paciente no encontrado')
+
+  let idMedico = null
+  if (requesterRol === 'medico') {
+    idMedico = await findMedicoIdByUserId(requesterIdUsuario)
+    const vinculado = idMedico && await pacienteVinculadoAMedico({ idPaciente: paciente.id_paciente, idMedico })
+    if (!vinculado) {
+      throw new HttpError(403, 'Ese paciente no está vinculado a tu cuenta')
+    }
+  } else if (requesterRol !== 'admin') {
+    throw new HttpError(403, 'Sin permisos para ver este historial')
+  }
+
+  const [turnos, recetas, mensajes] = await Promise.all([
+    listTurnosByPaciente({ idPaciente: paciente.id_paciente, idMedico }),
+    listRecetasByPaciente(paciente.id_paciente, idMedico),
+    listMensajesByPaciente(paciente.id_paciente, idMedico),
+  ])
+
+  return { turnos, recetas, mensajes }
 }
 
 /**
@@ -476,4 +542,6 @@ module.exports = {
   solicitarMensaje,
   getTycByMedico,
   aceptarTycByMedico,
+  buscarPacientePorDni,
+  getHistorialPaciente,
 }

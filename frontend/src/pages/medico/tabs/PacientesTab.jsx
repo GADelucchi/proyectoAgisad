@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Search, RefreshCw, CalendarPlus, UserPlus } from 'lucide-react'
+import { Search, RefreshCw, CalendarPlus, UserPlus, History, Pencil } from 'lucide-react'
 import Button from '../../../components/ui/Button'
 import { useAuth } from '../../../context/AuthContext'
 import { medicosApi } from '../../../services/medicos.api'
@@ -7,6 +7,17 @@ import { pacientesApi } from '../../../services/pacientes.api'
 import { turnosApi } from '../../../services/turnos.api'
 import { formatTime24h } from '../../../utils/dateFormat'
 import './PacientesTab.css'
+
+const RECETA_TIPO_LABEL = { urgente: 'Urgente', estandar: 'Estándar' }
+
+const TURNO_ESTADO_LABEL = {
+  pendiente: 'Pendiente', confirmado: 'Confirmado', en_curso: 'En curso',
+  completado: 'Paciente asistió', ausente: 'Paciente no asistió',
+  cancelado: 'Cancelado', cancelado_paciente: 'Cancelado por paciente',
+  cancelado_clinica: 'Cancelado por el profesional', realizado: 'Paciente asistió',
+}
+const RECETA_ESTADO_LABEL = { enviada: 'Enviada', leida: 'Leída', resuelta: 'Resuelta', rechazada: 'Rechazada' }
+const MENSAJE_ESTADO_LABEL = { enviada: 'Enviado', leida: 'Leído', respondida: 'Respondido', cerrada: 'Cerrado' }
 
 function toIsoDate(date) {
   const y = date.getFullYear()
@@ -54,6 +65,17 @@ export default function PacientesTab() {
   const [obrasSociales, setObrasSociales] = useState([])
   const [guardandoAlta, setGuardandoAlta] = useState(false)
   const [mensajeAlta, setMensajeAlta] = useState('')
+  const [buscandoDni, setBuscandoDni] = useState(false)
+  const [pacienteExistente, setPacienteExistente] = useState(false)
+
+  const [editarPara, setEditarPara] = useState(null)
+  const [formEditar, setFormEditar] = useState({ telefono: '', fecha_nac: '', id_obra_social: '', nro_obra_social: '' })
+  const [guardandoEditar, setGuardandoEditar] = useState(false)
+  const [mensajeEditar, setMensajeEditar] = useState('')
+
+  const [historialPara, setHistorialPara] = useState(null)
+  const [historial, setHistorial] = useState(null)
+  const [cargandoHistorial, setCargandoHistorial] = useState(false)
 
   async function load() {
     if (!isMedico) return
@@ -117,6 +139,8 @@ export default function PacientesTab() {
   function abrirAgendar(paciente) {
     setMensajeTurno('')
     setMostrarAlta(false)
+    setEditarPara(null)
+    setHistorialPara(null)
     setAgendarPara(paciente)
     setSlots([])
     setFormTurno({
@@ -130,8 +154,91 @@ export default function PacientesTab() {
   function abrirAlta() {
     setMensajeAlta('')
     setFormAlta(FORM_ALTA_VACIO)
+    setPacienteExistente(false)
     setAgendarPara(null)
+    setEditarPara(null)
+    setHistorialPara(null)
     setMostrarAlta(true)
+  }
+
+  async function buscarPorDni() {
+    const dni = formAlta.dni.trim()
+    if (!/^\d{7,8}$/.test(dni)) { setPacienteExistente(false); return }
+
+    setBuscandoDni(true)
+    try {
+      const encontrado = await pacientesApi.buscarPorDni(dni)
+      setPacienteExistente(true)
+      setFormAlta((prev) => ({
+        ...prev,
+        nombre: encontrado.nombre || '',
+        apellido: encontrado.apellido || '',
+        email: (encontrado.email || '').includes('@sin-email.local') ? '' : (encontrado.email || ''),
+        telefono: encontrado.telefono || '',
+        fecha_nac: encontrado.fecha_nac_iso || '',
+        id_obra_social: encontrado.id_obra_social ? String(encontrado.id_obra_social) : '',
+        nro_obra_social: encontrado.nro_obra_social || '',
+      }))
+    } catch {
+      // No existe (404) o falló la búsqueda: el médico completa los datos a mano.
+      setPacienteExistente(false)
+    } finally {
+      setBuscandoDni(false)
+    }
+  }
+
+  function abrirEditar(paciente) {
+    setMensajeEditar('')
+    setMostrarAlta(false)
+    setAgendarPara(null)
+    setHistorialPara(null)
+    setEditarPara(paciente)
+    setFormEditar({
+      telefono: paciente.telefono || '',
+      fecha_nac: paciente.fecha_nac_iso || '',
+      id_obra_social: paciente.id_obra_social ? String(paciente.id_obra_social) : '',
+      nro_obra_social: paciente.nro_obra_social || '',
+    })
+  }
+
+  async function guardarEdicion(event) {
+    event.preventDefault()
+    if (!editarPara) return
+
+    setGuardandoEditar(true)
+    setMensajeEditar('')
+    try {
+      await pacientesApi.actualizar(editarPara.id_paciente, {
+        telefono: formEditar.telefono.trim() || null,
+        fecha_nac: formEditar.fecha_nac || null,
+        id_obra_social: formEditar.id_obra_social || null,
+        nro_obra_social: formEditar.nro_obra_social.trim() || null,
+      })
+      setEditarPara(null)
+      setMensajeAlta(`${nombreCompleto(editarPara)} se actualizó correctamente.`)
+      await load()
+    } catch (err) {
+      setMensajeEditar(err?.message || 'No se pudieron guardar los cambios.')
+    } finally {
+      setGuardandoEditar(false)
+    }
+  }
+
+  async function abrirHistorial(paciente) {
+    setMostrarAlta(false)
+    setAgendarPara(null)
+    setEditarPara(null)
+    setHistorialPara(paciente)
+    setHistorial(null)
+    setCargandoHistorial(true)
+    try {
+      const data = await pacientesApi.getHistorial(paciente.id_paciente)
+      setHistorial(data)
+    } catch {
+      setHistorial({ turnos: [], recetas: [], mensajes: [] })
+    } finally {
+      setCargandoHistorial(false)
+    }
   }
 
   async function guardarPaciente(event) {
@@ -154,6 +261,7 @@ export default function PacientesTab() {
       })
       setMostrarAlta(false)
       setFormAlta(FORM_ALTA_VACIO)
+      setPacienteExistente(false)
       setMensajeAlta(
         creado?.ya_existia
           ? `${nombreCompleto(creado)} ya estaba registrado en el sistema y se agregó a tu listado.`
@@ -242,9 +350,14 @@ export default function PacientesTab() {
                 className="form-input"
                 inputMode="numeric"
                 value={formAlta.dni}
-                onChange={(e) => setFormAlta({ ...formAlta, dni: e.target.value })}
+                onChange={(e) => {
+                  setFormAlta({ ...formAlta, dni: e.target.value })
+                  if (pacienteExistente) setPacienteExistente(false)
+                }}
+                onBlur={buscarPorDni}
                 required
               />
+              {buscandoDni && <small className="auth-help">Buscando...</small>}
             </div>
 
             <div className="form-group" style={{ margin: 0 }}>
@@ -254,6 +367,7 @@ export default function PacientesTab() {
                 className="form-input"
                 value={formAlta.apellido}
                 onChange={(e) => setFormAlta({ ...formAlta, apellido: e.target.value })}
+                readOnly={pacienteExistente}
                 required
               />
             </div>
@@ -265,6 +379,7 @@ export default function PacientesTab() {
                 className="form-input"
                 value={formAlta.nombre}
                 onChange={(e) => setFormAlta({ ...formAlta, nombre: e.target.value })}
+                readOnly={pacienteExistente}
                 required
               />
             </div>
@@ -277,6 +392,7 @@ export default function PacientesTab() {
                 className="form-input"
                 value={formAlta.email}
                 onChange={(e) => setFormAlta({ ...formAlta, email: e.target.value })}
+                readOnly={pacienteExistente}
               />
             </div>
 
@@ -287,6 +403,7 @@ export default function PacientesTab() {
                 className="form-input"
                 value={formAlta.telefono}
                 onChange={(e) => setFormAlta({ ...formAlta, telefono: e.target.value })}
+                readOnly={pacienteExistente}
               />
             </div>
 
@@ -299,6 +416,7 @@ export default function PacientesTab() {
                 max={toIsoDate(new Date())}
                 value={formAlta.fecha_nac}
                 onChange={(e) => setFormAlta({ ...formAlta, fecha_nac: e.target.value })}
+                readOnly={pacienteExistente}
               />
             </div>
 
@@ -314,6 +432,7 @@ export default function PacientesTab() {
                   obra_social: '',
                   nro_obra_social: e.target.value ? formAlta.nro_obra_social : '',
                 })}
+                disabled={pacienteExistente}
               >
                 <option value="">Particular / Sin cobertura</option>
                 {obrasSociales.map((os) => (
@@ -346,14 +465,21 @@ export default function PacientesTab() {
                 value={formAlta.nro_obra_social}
                 disabled={!formAlta.id_obra_social}
                 onChange={(e) => setFormAlta({ ...formAlta, nro_obra_social: e.target.value })}
+                readOnly={pacienteExistente}
               />
             </div>
           </div>
 
-          <p className="paciente-help">
-            Si cargás el email, el paciente puede activar su cuenta desde &quot;Olvidé mi contraseña&quot; y ver sus turnos.
-            Si el DNI ya existe en el sistema, solo se agrega a tu listado.
-          </p>
+          {pacienteExistente ? (
+            <p className="paciente-help">
+              Este DNI ya está registrado en el sistema — se muestran sus datos y solo se va a vincular a tu listado, no se pueden editar acá.
+            </p>
+          ) : (
+            <p className="paciente-help">
+              Si cargás el email, el paciente puede activar su cuenta desde &quot;Olvidé mi contraseña&quot; y ver sus turnos.
+              Si al salir del campo DNI detectamos que ya está registrado, autocompletamos el resto.
+            </p>
+          )}
 
           <div className="paciente-alta-actions">
             <Button type="button" variant="ghost" size="sm" onClick={() => setMostrarAlta(false)}>Cancelar</Button>
@@ -453,6 +579,136 @@ export default function PacientesTab() {
 
       {mensajeTurno && <p className="paciente-turno-msg">{mensajeTurno}</p>}
 
+      {editarPara && (
+        <form className="paciente-agendar surface-raised" onSubmit={guardarEdicion}>
+          <h4>{`Editar ${nombreCompleto(editarPara)}`}</h4>
+
+          <div className="paciente-agendar-grid">
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="editar-telefono">Teléfono</label>
+              <input
+                id="editar-telefono"
+                className="form-input"
+                value={formEditar.telefono}
+                onChange={(e) => setFormEditar({ ...formEditar, telefono: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="editar-nacimiento">Fecha de nacimiento</label>
+              <input
+                id="editar-nacimiento"
+                type="date"
+                className="form-input"
+                max={toIsoDate(new Date())}
+                value={formEditar.fecha_nac}
+                onChange={(e) => setFormEditar({ ...formEditar, fecha_nac: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="editar-obra-social">Obra social</label>
+              <select
+                id="editar-obra-social"
+                className="form-select"
+                value={formEditar.id_obra_social}
+                onChange={(e) => setFormEditar({ ...formEditar, id_obra_social: e.target.value })}
+              >
+                <option value="">Particular / Sin cobertura</option>
+                {obrasSociales.map((os) => (
+                  <option key={os.id_obra_social} value={String(os.id_obra_social)}>{os.nombre}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="editar-afiliado">N° de afiliado</label>
+              <input
+                id="editar-afiliado"
+                className="form-input"
+                value={formEditar.nro_obra_social}
+                disabled={!formEditar.id_obra_social}
+                onChange={(e) => setFormEditar({ ...formEditar, nro_obra_social: e.target.value })}
+              />
+            </div>
+          </div>
+
+          {mensajeEditar && <p className="paciente-turno-msg">{mensajeEditar}</p>}
+
+          <div className="paciente-alta-actions">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setEditarPara(null)}>Cancelar</Button>
+            <Button type="submit" size="sm" disabled={guardandoEditar}>
+              {guardandoEditar ? 'Guardando...' : 'Guardar cambios'}
+            </Button>
+          </div>
+        </form>
+      )}
+
+      {historialPara && (
+        <div className="paciente-agendar surface-raised">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h4 style={{ margin: 0 }}>{`Historial de ${nombreCompleto(historialPara)}`}</h4>
+            <Button variant="ghost" size="sm" type="button" onClick={() => setHistorialPara(null)}>Cerrar</Button>
+          </div>
+
+          {cargandoHistorial ? (
+            <p className="paciente-help">Cargando...</p>
+          ) : (
+            <div style={{ display: 'grid', gap: '1rem', marginTop: '0.75rem' }}>
+              <div>
+                <p style={{ fontWeight: 600, marginBottom: '0.4rem' }}>Turnos</p>
+                {historial?.turnos?.length ? (
+                  <div style={{ display: 'grid', gap: '0.4rem' }}>
+                    {historial.turnos.map((t) => (
+                      <div key={t.id_turno} className="surface" style={{ padding: '0.6rem 0.8rem', fontSize: '0.85rem' }}>
+                        {t.fecha_iso} {t.hora} · {t.clinica_nombre} · {TURNO_ESTADO_LABEL[t.estado] || t.estado}
+                        {t.motivo && <> · {t.motivo}</>}
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className="paciente-help">Sin turnos registrados.</p>}
+              </div>
+
+              <div>
+                <p style={{ fontWeight: 600, marginBottom: '0.4rem' }}>Recetas solicitadas</p>
+                {historial?.recetas?.length ? (
+                  <div style={{ display: 'grid', gap: '0.4rem' }}>
+                    {historial.recetas.map((r) => {
+                      let items
+                      try { items = JSON.parse(r.items_json) } catch { items = [] }
+                      return (
+                        <div key={r.id_solicitud} className="surface" style={{ padding: '0.6rem 0.8rem', fontSize: '0.85rem' }}>
+                          {new Date(r.creado_en).toLocaleDateString('es-AR')} · {RECETA_TIPO_LABEL[r.tipo] || r.tipo} · {RECETA_ESTADO_LABEL[r.estado] || r.estado}
+                          <br />
+                          {items.map((it, idx) => (
+                            <span key={idx}>{idx > 0 && ', '}{it.medicamento}{it.dosis ? ` (${it.dosis})` : ''}</span>
+                          ))}
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : <p className="paciente-help">Sin recetas solicitadas.</p>}
+              </div>
+
+              <div>
+                <p style={{ fontWeight: 600, marginBottom: '0.4rem' }}>Mensajes</p>
+                {historial?.mensajes?.length ? (
+                  <div style={{ display: 'grid', gap: '0.4rem' }}>
+                    {historial.mensajes.map((m) => (
+                      <div key={m.id_solicitud} className="surface" style={{ padding: '0.6rem 0.8rem', fontSize: '0.85rem' }}>
+                        {new Date(m.creado_en).toLocaleDateString('es-AR')} · {m.asunto} · {MENSAJE_ESTADO_LABEL[m.estado] || m.estado}
+                        <br />
+                        {m.mensaje}
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className="paciente-help">Sin mensajes.</p>}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="surface-raised">
         <p style={{ padding: '0.6rem 1rem', fontSize: '0.8rem', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>
           Mostrando {filtrados.length} de {pacientes.length} pacientes
@@ -480,8 +736,12 @@ export default function PacientesTab() {
                       <Button variant="secondary" size="sm" onClick={() => abrirAgendar(p)}>
                         <CalendarPlus size={14} /> Agendar
                       </Button>
-                      <Button variant="ghost" size="sm" disabled>Historial</Button>
-                      <Button variant="ghost" size="sm" disabled>Editar</Button>
+                      <Button variant="ghost" size="sm" onClick={() => abrirHistorial(p)}>
+                        <History size={14} /> Historial
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => abrirEditar(p)}>
+                        <Pencil size={14} /> Editar
+                      </Button>
                     </div>
                   </td>
                 </tr>

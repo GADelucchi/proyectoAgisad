@@ -7,6 +7,7 @@ const turnosRoutes = require('../modules/turnos/turnos.routes')
 const pacientesRoutes = require('../modules/pacientes/pacientes.routes')
 const asistentesRoutes = require('../modules/asistentes/asistentes.routes')
 const adminRoutes = require('../modules/admin/admin.routes')
+const gerentesRoutes = require('../modules/gerentes/gerentes.routes')
 
 const router = Router()
 
@@ -22,5 +23,6 @@ router.use('/turnos', turnosRoutes)
 router.use('/pacientes', pacientesRoutes)
 router.use('/asistentes', asistentesRoutes)
 router.use('/admin', adminRoutes)
+router.use('/gerentes', gerentesRoutes)
 
 module.exports = router

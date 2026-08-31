@@ -12,6 +12,8 @@ const {
   solicitarMensaje,
   getTycByMedico,
   aceptarTycByMedico,
+  buscarPacientePorDni,
+  getHistorialPaciente,
 } = require('./pacientes.service')
 
 async function list(req, res, next) {
@@ -60,6 +62,32 @@ async function patch(req, res, next) {
     const data = await patchPaciente({
       idPaciente: req.params.id,
       fields: req.body,
+      requesterIdUsuario: req.user.idUsuario,
+      requesterRol: req.user.rol,
+    })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function buscarPorDni(req, res, next) {
+  try {
+    const data = await buscarPacientePorDni({
+      dni: req.params.dni,
+      requesterRol: req.user.rol,
+    })
+    if (!data) return res.status(404).json({ message: 'No hay ningún paciente con ese DNI' })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function getHistorial(req, res, next) {
+  try {
+    const data = await getHistorialPaciente({
+      idPaciente: req.params.id,
       requesterIdUsuario: req.user.idUsuario,
       requesterRol: req.user.rol,
     })
@@ -180,6 +208,8 @@ module.exports = {
   create,
   getOne,
   patch,
+  buscarPorDni,
+  getHistorial,
   getMe,
   patchMe,
   listObrasSociales,

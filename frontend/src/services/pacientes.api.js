@@ -13,6 +13,9 @@ export const pacientesApi = {
     return api.get(`/pacientes${suffix}`)
   },
   crear: (payload) => api.post('/pacientes', payload),
+  buscarPorDni: (dni) => api.get(`/pacientes/buscar-dni/${encodeURIComponent(dni)}`),
+  actualizar: (idPaciente, payload) => api.patch(`/pacientes/${idPaciente}`, payload),
+  getHistorial: (idPaciente) => api.get(`/pacientes/${idPaciente}/historial`),
   solicitarReceta: (idMedico, payload) => api.post(`/pacientes/medicos/${idMedico}/recetas`, payload),
   enviarMensaje: (idMedico, payload) => api.post(`/pacientes/medicos/${idMedico}/mensajes`, payload),
   getMiPerfil: () => api.get('/pacientes/me'),

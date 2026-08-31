@@ -15,6 +15,9 @@ docs
 .env
 .env.*
 
+# Screenshots de prueba / promoción, no se versionan
+testImgs
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

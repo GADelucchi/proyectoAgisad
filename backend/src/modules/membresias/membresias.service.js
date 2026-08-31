@@ -77,15 +77,51 @@ async function findUserIdByMedicoId(idMedico) {
   return rows[0]?.id_usuario || null
 }
 
+/**
+ * Si el usuario es un médico sin membresía propia vigente, busca si algún
+ * gerente lo cubre (gerente_medico_beneficios) y devuelve el plan del
+ * gerente en su lugar. No aplica a gerentes/asistentes/pacientes.
+ */
+async function getGerenteCoveredMembershipByUserId(idUsuario) {
+  const medicoRows = await query(
+    `SELECT id_medico FROM medicos WHERE id_usuario = :idUsuario LIMIT 1`,
+    { idUsuario }
+  )
+  const idMedico = medicoRows[0]?.id_medico
+  if (!idMedico) return null
+
+  const beneficioRows = await query(
+    `SELECT g.id_usuario AS id_usuario_gerente
+     FROM gerente_medico_beneficios gmb
+     INNER JOIN gerentes g ON g.id_gerente = gmb.id_gerente
+     WHERE gmb.id_medico = :idMedico
+       AND gmb.activo = 1
+       AND gmb.cubre_membresia = 1
+     ORDER BY gmb.creado_en DESC
+     LIMIT 1`,
+    { idMedico }
+  )
+  const idUsuarioGerente = beneficioRows[0]?.id_usuario_gerente
+  if (!idUsuarioGerente) return null
+
+  const gerenteMembership = await getCurrentMembershipByUserId(idUsuarioGerente)
+  if (!gerenteMembership || !Number(gerenteMembership.activa_vigente)) return null
+
+  return { ...gerenteMembership, origen: 'gerente' }
+}
+
 async function assertUserFeatureByUserId({ idUsuario, feature, denyMessage }) {
-  const membership = await getCurrentMembershipByUserId(idUsuario)
+  let membership = await getCurrentMembershipByUserId(idUsuario)
 
-  if (!membership) {
-    throw new HttpError(402, 'No tenes una membresia activa para acceder a este modulo')
-  }
-
-  if (!Number(membership.activa_vigente)) {
-    throw new HttpError(402, 'Tu membresia esta vencida o inactiva')
+  if (!membership || !Number(membership.activa_vigente)) {
+    const cubierta = await getGerenteCoveredMembershipByUserId(idUsuario)
+    if (cubierta) {
+      membership = cubierta
+    } else if (!membership) {
+      throw new HttpError(402, 'No tenes una membresia activa para acceder a este modulo')
+    } else {
+      throw new HttpError(402, 'Tu membresia esta vencida o inactiva')
+    }
   }
 
   if (!Number(membership[feature])) {
@@ -104,14 +140,24 @@ async function assertMedicoFeatureByMedicoId({ idMedico, feature, denyMessage })
   return assertUserFeatureByUserId({ idUsuario, feature, denyMessage })
 }
 
+/**
+ * Vigencia "efectiva": propia, o prestada por un gerente que cubra a este
+ * médico. Usar para cualquier acción que un médico cubierto por un gerente
+ * debe poder seguir haciendo (recibir solicitudes de recetas/mensajes, etc.).
+ */
 async function assertMembershipNotExpired(idUsuario, actionMessage = 'Esta acción') {
   const membership = await getCurrentMembershipByUserId(idUsuario)
 
-  if (!membership || !Number(membership.activa_vigente)) {
-    throw new HttpError(402, `${actionMessage} no está disponible porque tu membresía está vencida. Renová tu suscripción para continuar.`)
+  if (membership && Number(membership.activa_vigente)) {
+    return membership
   }
 
-  return membership
+  const cubierta = await getGerenteCoveredMembershipByUserId(idUsuario)
+  if (cubierta) {
+    return cubierta
+  }
+
+  throw new HttpError(402, `${actionMessage} no está disponible porque tu membresía está vencida. Renová tu suscripción para continuar.`)
 }
 
 async function assertMembershipNotExpiredByMedicoId(idMedico, actionMessage = 'Esta acción') {
@@ -123,6 +169,33 @@ async function assertMembershipNotExpiredByMedicoId(idMedico, actionMessage = 'E
   return assertMembershipNotExpired(idUsuario, actionMessage)
 }
 
+/**
+ * Vigencia estricta, SIN el préstamo de un gerente: para acciones que un
+ * médico cubierto por un gerente no debe poder hacer (ej. crear una
+ * clínica propia independiente de la que lo invitó).
+ */
+async function assertOwnMembershipActive(idUsuario, actionMessage = 'Esta acción') {
+  const membership = await getCurrentMembershipByUserId(idUsuario)
+
+  if (!membership || !Number(membership.activa_vigente)) {
+    throw new HttpError(
+      402,
+      `${actionMessage} no está disponible porque tu membresía está vencida. Renová tu suscripción para continuar.`
+    )
+  }
+
+  return membership
+}
+
+async function assertOwnMembershipActiveByMedicoId(idMedico, actionMessage = 'Esta acción') {
+  const idUsuario = await findUserIdByMedicoId(idMedico)
+  if (!idUsuario) {
+    throw new HttpError(404, 'Medico no encontrado')
+  }
+
+  return assertOwnMembershipActive(idUsuario, actionMessage)
+}
+
 module.exports = {
   normalizePlanCode,
   getCurrentMembershipByUserId,
@@ -131,4 +204,6 @@ module.exports = {
   assertMedicoFeatureByMedicoId,
   assertMembershipNotExpired,
   assertMembershipNotExpiredByMedicoId,
+  assertOwnMembershipActive,
+  assertOwnMembershipActiveByMedicoId,
 }

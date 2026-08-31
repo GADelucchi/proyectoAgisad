@@ -392,14 +392,17 @@ async function getCurrentUser(idUsuario) {
   return buildUserPayload(user)
 }
 
-async function registerPaciente(input) {
+// requireAceptaTyc=false: alta interna hecha por un médico/asistente en nombre
+// del paciente (paciente no presente, no puede tildar el checkbox). El paciente
+// da su propio consentimiento más adelante, al entrar por "olvidé mi contraseña".
+async function registerPaciente(input, { requireAceptaTyc = true } = {}) {
   const required = ['email', 'password', 'dni', 'nombre', 'apellido']
   for (const field of required) {
     if (!input[field]) {
       throw new HttpError(400, `Falta el campo obligatorio: ${field}`)
     }
   }
-  if (!input.acepta_tyc) {
+  if (requireAceptaTyc && !input.acepta_tyc) {
     throw new HttpError(400, 'Tenés que aceptar los términos y condiciones y la política de privacidad')
   }
 

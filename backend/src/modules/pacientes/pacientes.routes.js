@@ -56,6 +56,14 @@ router.post(
   ctrl.acceptTyc
 )
 
+// GET /api/pacientes/buscar-dni/:dni -> autocompletar alta manual si ya existe
+router.get(
+  '/buscar-dni/:dni',
+  requireAuth,
+  requireRoles('medico', 'asistente'),
+  ctrl.buscarPorDni
+)
+
 // GET /api/pacientes/:id
 router.get(
   '/:id',
@@ -64,11 +72,19 @@ router.get(
   ctrl.getOne
 )
 
+// GET /api/pacientes/:id/historial -> turnos/recetas/mensajes con ese médico
+router.get(
+  '/:id/historial',
+  requireAuth,
+  requireRoles('medico', 'admin'),
+  ctrl.getHistorial
+)
+
 // PATCH /api/pacientes/:id
 router.patch(
   '/:id',
   requireAuth,
-  requireRoles('paciente', 'admin'),
+  requireRoles('paciente', 'medico', 'admin'),
   ctrl.patch
 )
 

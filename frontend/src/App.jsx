@@ -15,6 +15,7 @@ import RegistroPage         from './pages/public/RegistroPage'
 import RegistroPacientePage from './pages/public/RegistroPacientePage'
 import RegistroMedicoPage   from './pages/public/RegistroMedicoPage'
 import RegistroGerentePage  from './pages/public/RegistroGerentePage'
+import InvitacionPage       from './pages/public/InvitacionPage'
 import VerificarEmailPage   from './pages/public/VerificarEmailPage'
 import RecuperarPasswordPage from './pages/public/RecuperarPasswordPage'
 import NuevaPasswordPage     from './pages/public/NuevaPasswordPage'
@@ -52,6 +53,7 @@ export default function App() {
                 <Route path="/registro/profesional" element={<RegistroMedicoPage />} />
                 <Route path="/registro/medico" element={<RegistroMedicoPage />} />
                 <Route path="/registro/gerente" element={<RegistroGerentePage />} />
+                <Route path="/invitacion/:token" element={<InvitacionPage />} />
                 <Route path="/verificar-email" element={<VerificarEmailPage />} />
                 <Route path="/recuperar-password" element={<RecuperarPasswordPage />} />
                 <Route path="/nueva-password/:token" element={<NuevaPasswordPage />} />

@@ -15,6 +15,9 @@ async function listPacientesByMedico(idMedico, search) {
       p.apellido,
       p.telefono,
       DATE_FORMAT(p.fecha_nac, '%d/%m/%Y') AS fecha_nac,
+      DATE_FORMAT(p.fecha_nac, '%Y-%m-%d') AS fecha_nac_iso,
+      p.id_obra_social,
+      p.nro_obra_social,
       os.nombre AS obra_social,
       u.email
     FROM pacientes p
@@ -43,6 +46,28 @@ async function listPacientesByMedico(idMedico, search) {
   sql += ` ORDER BY p.apellido, p.nombre`
 
   return query(sql, params)
+}
+
+/**
+ * Un paciente está "vinculado" a un médico si tuvo algún turno con él o
+ * si existe una fila activa en paciente_vinculos (alta manual, etc.).
+ */
+async function pacienteVinculadoAMedico({ idPaciente, idMedico }) {
+  const rows = await query(
+    `SELECT 1
+     WHERE EXISTS (
+       SELECT 1 FROM turnos t
+       WHERE t.id_paciente = :idPaciente AND t.id_medico = :idMedico
+     )
+     OR EXISTS (
+       SELECT 1 FROM paciente_vinculos pv
+       WHERE pv.id_paciente = :idPaciente
+         AND pv.id_medico = :idMedico
+         AND pv.estado = 'activo'
+     )`,
+    { idPaciente, idMedico }
+  )
+  return rows.length > 0
 }
 
 /**
@@ -205,7 +230,7 @@ async function existsObraSocial(idObraSocial) {
   return Boolean(rows[0])
 }
 
-async function listRecetasByPaciente(idPaciente) {
+async function listRecetasByPaciente(idPaciente, idMedico = null) {
   return query(
     `SELECT
        rs.id_solicitud,
@@ -219,12 +244,13 @@ async function listRecetasByPaciente(idPaciente) {
      FROM receta_solicitudes rs
      INNER JOIN medicos m ON m.id_medico = rs.id_medico
      WHERE rs.id_paciente = :idPaciente
+       AND (:idMedico IS NULL OR rs.id_medico = :idMedico)
      ORDER BY rs.creado_en DESC`,
-    { idPaciente }
+    { idPaciente, idMedico }
   )
 }
 
-async function listMensajesByPaciente(idPaciente) {
+async function listMensajesByPaciente(idPaciente, idMedico = null) {
   return query(
     `SELECT
        ms.id_solicitud,
@@ -238,8 +264,9 @@ async function listMensajesByPaciente(idPaciente) {
      FROM mensaje_solicitudes ms
      INNER JOIN medicos m ON m.id_medico = ms.id_medico
      WHERE ms.id_paciente = :idPaciente
+       AND (:idMedico IS NULL OR ms.id_medico = :idMedico)
      ORDER BY ms.creado_en DESC`,
-    { idPaciente }
+    { idPaciente, idMedico }
   )
 }
 
@@ -374,4 +401,5 @@ module.exports = {
   medicoTieneClinica,
   upsertPacienteVinculo,
   ensureObraSocialByNombre,
+  pacienteVinculadoAMedico,
 }
