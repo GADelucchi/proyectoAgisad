@@ -84,6 +84,8 @@ const env = {
   MAIL_USER: process.env.MAIL_USER,
   MAIL_PASSWORD: process.env.MAIL_PASSWORD,
   MAIL_FROM: process.env.MAIL_FROM,
+  MAIL_FROM_RECETAS: process.env.MAIL_FROM_RECETAS || process.env.MAIL_FROM,
+  MAIL_FROM_TURNOS: process.env.MAIL_FROM_TURNOS || process.env.MAIL_FROM,
   APP_TIMEZONE: requiredString('APP_TIMEZONE'),
   APP_LOCALE: requiredString('APP_LOCALE'),
   CORS_ALLOWED_ORIGINS: requiredString('CORS_ALLOWED_ORIGINS'),

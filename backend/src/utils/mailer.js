@@ -66,7 +66,7 @@ async function sendRecetaSolicitudEmail({ to, medico, paciente, tipo, items }) {
     .join('\n')
 
   await transporter.sendMail({
-    from: env.MAIL_FROM,
+    from: env.MAIL_FROM_RECETAS,
     to,
     subject: `Solicitud de receta ${tipo === 'urgente' ? 'urgente' : 'estándar'} — Agisad`,
     text: [
@@ -90,7 +90,7 @@ async function sendRecetaSolicitudEmail({ to, medico, paciente, tipo, items }) {
 
 async function sendPacienteMensajeEmail({ to, medico, paciente, asunto, mensaje }) {
   await transporter.sendMail({
-    from: env.MAIL_FROM,
+    from: env.MAIL_FROM_RECETAS,
     to,
     subject: `Nuevo mensaje de paciente — ${asunto}`,
     text: [
