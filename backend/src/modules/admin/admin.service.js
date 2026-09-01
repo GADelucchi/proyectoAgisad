@@ -168,10 +168,34 @@ async function reactivateMembership(input) {
   }
 }
 
+async function listAdicionalesConsultorio(estado) {
+  const filtro = estado ? String(estado) : null
+  return adminRepository.listAdicionalesConsultorio(filtro)
+}
+
+async function resolverAdicionalConsultorio({ idAdicional, aprobar, idUsuarioAdmin }) {
+  const id = toNumber(idAdicional)
+  if (!id) {
+    throw new HttpError(400, 'id_adicional invalido')
+  }
+
+  const ok = aprobar
+    ? await adminRepository.activarAdicionalConsultorio({ idAdicional: id, idUsuarioAdmin })
+    : await adminRepository.rechazarAdicionalConsultorio(id)
+
+  if (!ok) {
+    throw new HttpError(404, 'Adicional no encontrado o ya resuelto')
+  }
+
+  return { id_adicional: id, estado: aprobar ? 'activo' : 'rechazado' }
+}
+
 module.exports = {
   listUsuarios,
   getUsuarioDetalle,
   getFinanzas,
   getUserSubscription,
   reactivateMembership,
+  listAdicionalesConsultorio,
+  resolverAdicionalConsultorio,
 }

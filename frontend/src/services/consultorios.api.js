@@ -9,6 +9,10 @@ export const consultoriosApi = {
   },
 
   listMios: () => api.get('/consultorios/mios'),
+
+  getAdicional: () => api.get('/consultorios/adicional'),
+  solicitarAdicional: () => api.post('/consultorios/adicional'),
+  cancelarAdicional: () => api.delete('/consultorios/adicional'),
   crear: (payload) => api.post('/consultorios', payload),
   publicar: (idClinica, publicar) => api.patch(`/consultorios/${idClinica}/publicar`, { publicar }),
 

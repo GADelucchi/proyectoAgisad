@@ -105,7 +105,7 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
   const navigate = useNavigate()
   const doctorId = String(usuario?.idUsuario || usuario?.id || '')
   const permiteAsistentes = Boolean(usuario?.membresia?.permite_asistentes)
-  const puedePublicar = Boolean(usuario?.membresia?.permite_publicar_consultorio)
+
   const planNombre = usuario?.membresia?.plan_nombre || usuario?.membresia?.plan_codigo || 'Sin plan'
 
   const [consultorios, setConsultorios] = useState([])
@@ -125,6 +125,7 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
   const [estadoMailConfig, setEstadoMailConfig] = useState('')
 
   const [publicados, setPublicados] = useState({})
+  const [adicional, setAdicional] = useState(null)
   const [showClinicForm, setShowClinicForm] = useState(false)
   const [clinicForm, setClinicForm] = useState(clinicFormFromRow())
 
@@ -145,6 +146,9 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
     const compartidos = permiteTurnos
       ? await consultoriosApi.listMios().catch(() => [])
       : []
+    const estadoAdicional = permiteTurnos
+      ? await consultoriosApi.getAdicional().catch(() => null)
+      : null
 
     const clinics = Array.isArray(clinicasRows) ? clinicasRows : []
     const tipos = Array.isArray(turnosConfig?.tipos_turno) ? turnosConfig.tipos_turno.map(mapTipoTurno) : []
@@ -153,6 +157,7 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
     setPublicados(Object.fromEntries(
       (Array.isArray(compartidos) ? compartidos : []).map((c) => [c.id_clinica, Boolean(c.compartido)])
     ))
+    setAdicional(estadoAdicional)
     setBloqueos(Array.isArray(bloqueosRows) ? bloqueosRows : [])
     setAsistentes(Array.isArray(asistentesRows) ? asistentesRows.map(mapAsistente) : [])
     setDuracion(String(turnosConfig?.duracion_turno_estandar || 30))
@@ -178,6 +183,7 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
       setEnviarRecetasMail(true)
       setNotifTurnoNuevo(true)
       setNotifCancelacion(true)
+      setAdicional(null)
     })
   }, [doctorId, permiteAsistentes, permiteTurnos])
 
@@ -355,10 +361,32 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
     }
   }
 
+  async function solicitarAdicional() {
+    try {
+      await consultoriosApi.solicitarAdicional()
+      setAdicional(await consultoriosApi.getAdicional().catch(() => null))
+      setEstadoCrud('Solicitud enviada. Vas a poder publicar en cuanto se acredite el pago.')
+    } catch (err) {
+      setEstadoCrud(err?.message || 'No se pudo solicitar el adicional.')
+    }
+  }
+
+  async function darDeBajaAdicional() {
+    if (!window.confirm('Al dar de baja el adicional se despublican tus consultorios y dejan de recibir solicitudes. ¿Continuar?')) return
+    try {
+      const r = await consultoriosApi.cancelarAdicional()
+      await loadData()
+      setEstadoCrud(`Adicional dado de baja. Se despublicaron ${r?.despublicados ?? 0} consultorio(s).`)
+    } catch (err) {
+      setEstadoCrud(err?.message || 'No se pudo dar de baja el adicional.')
+    }
+  }
+
   async function togglePublicar(idClinica, publicar) {
     try {
       await consultoriosApi.publicar(idClinica, publicar)
       setPublicados((prev) => ({ ...prev, [idClinica]: publicar }))
+      setAdicional(await consultoriosApi.getAdicional().catch(() => null))
       setEstadoCrud(publicar
         ? 'Consultorio publicado para alquiler.'
         : 'Consultorio despublicado.')
@@ -601,6 +629,47 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
           </div>
         </div>
         <p className="config-section-sub">Alta, edicion y baja de consultorios del medico autenticado.</p>
+
+        <div className="config-asistente-row" style={{ marginBottom: 0 }}>
+          <div>
+            <strong>Publicar consultorios para alquiler</strong>
+            {!adicional?.plan_habilita && (
+              <p style={{ margin: '2px 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                Tu plan actual no incluye este adicional. Está disponible desde el plan Medio en adelante.
+              </p>
+            )}
+            {adicional?.plan_habilita && adicional?.estado === 'activo' && (
+              <p style={{ margin: '2px 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                Activo desde {adicional.activado_en} · AR$ {Number(adicional.monto_mensual).toLocaleString('es-AR')} por mes ·
+                {' '}{adicional.publicados} de {adicional.max_consultorios} consultorios publicados
+              </p>
+            )}
+            {adicional?.plan_habilita && adicional?.estado === 'pendiente' && (
+              <p style={{ margin: '2px 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                Solicitado el {adicional.solicitado_en}. Se habilita cuando se acredite el pago.
+              </p>
+            )}
+            {adicional?.plan_habilita && !adicional?.estado && (
+              <p style={{ margin: '2px 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                AR$ {Number(adicional.monto_mensual).toLocaleString('es-AR')} por mes, se suma a tu membresía.
+                Podés publicar hasta {adicional.max_consultorios} consultorios. Si tenés más espacios para alquilar,
+                la cuenta de propietario está pensada para eso.
+              </p>
+            )}
+          </div>
+          {!adicional?.plan_habilita && (
+            <Button size="sm" variant="secondary" onClick={solicitarCambioMembresia}>Cambiar plan</Button>
+          )}
+          {adicional?.plan_habilita && !adicional?.estado && (
+            <Button size="sm" onClick={solicitarAdicional}>Contratar adicional</Button>
+          )}
+          {adicional?.estado === 'pendiente' && (
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Pendiente de activación</span>
+          )}
+          {adicional?.estado === 'activo' && (
+            <Button size="sm" variant="ghost" onClick={darDeBajaAdicional}>Dar de baja</Button>
+          )}
+        </div>
         {estadoCrud && <p className="config-terms-msg">{estadoCrud}</p>}
         {consultorios.length === 0 && <p className="config-bloqueos-vacio">No hay consultorios cargados.</p>}
         {consultorios.map((c) => (
@@ -613,15 +682,13 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
               <p className="config-consultorio-horarios">{c.direccion || 'Sin direccion'}</p>
             </div>
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-              {puedePublicar && (
-                <Button
-                  variant={publicados[c.id] ? 'accent' : 'ghost'}
-                  size="sm"
-                  onClick={() => togglePublicar(c.id, !publicados[c.id])}
-                >
-                  {publicados[c.id] ? 'Publicado' : 'Publicar para alquiler'}
-                </Button>
-              )}
+              <Button
+                variant={publicados[c.id] ? 'accent' : 'ghost'}
+                size="sm"
+                onClick={() => togglePublicar(c.id, !publicados[c.id])}
+              >
+                {publicados[c.id] ? 'Publicado' : 'Publicar para alquiler'}
+              </Button>
               <Button variant="ghost" size="sm" onClick={() => openEditClinica(c)}><Edit2 size={13} /> Editar</Button>
               <Button variant="danger" size="sm" onClick={() => deleteClinica(c.id)}><Trash2 size={13} /> Eliminar</Button>
             </div>

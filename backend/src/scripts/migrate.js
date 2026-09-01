@@ -39,6 +39,7 @@ const MIGRATIONS = [
   '023_email_verificacion.sql',
   '024_turnos_notificaciones.sql',
   '025_consultorios_alquiler.sql',
+  '026_adicional_consultorios.sql',
 ]
 
 async function ensureLogTable(conn) {

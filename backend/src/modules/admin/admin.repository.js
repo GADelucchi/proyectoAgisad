@@ -560,6 +560,41 @@ async function reactivateMembershipByUser({
   }
 }
 
+async function listAdicionalesConsultorio(estado = null) {
+  return query(
+    `SELECT ac.id_adicional, ac.id_medico, ac.estado, ac.monto_mensual, ac.max_consultorios,
+            DATE_FORMAT(ac.solicitado_en, '%d/%m/%Y %H:%i') AS solicitado_en,
+            DATE_FORMAT(ac.activado_en, '%d/%m/%Y') AS activado_en,
+            m.nombre, m.apellido, m.matricula, u.email, u.id_usuario
+     FROM medico_adicional_consultorios ac
+     INNER JOIN medicos m ON m.id_medico = ac.id_medico
+     INNER JOIN usuarios u ON u.id_usuario = m.id_usuario
+     WHERE (:estado IS NULL OR ac.estado = :estado)
+     ORDER BY ac.solicitado_en DESC`,
+    { estado }
+  )
+}
+
+async function activarAdicionalConsultorio({ idAdicional, idUsuarioAdmin }) {
+  const result = await query(
+    `UPDATE medico_adicional_consultorios
+     SET estado = 'activo', activado_en = NOW(), activado_por = :idUsuarioAdmin
+     WHERE id_adicional = :idAdicional AND estado = 'pendiente'`,
+    { idAdicional, idUsuarioAdmin }
+  )
+  return result.affectedRows > 0
+}
+
+async function rechazarAdicionalConsultorio(idAdicional) {
+  const result = await query(
+    `UPDATE medico_adicional_consultorios
+     SET estado = 'rechazado', cancelado_en = NOW()
+     WHERE id_adicional = :idAdicional AND estado = 'pendiente'`,
+    { idAdicional }
+  )
+  return result.affectedRows > 0
+}
+
 module.exports = {
   listUsuariosAdmin,
   findUsuarioBaseById,
@@ -576,4 +611,7 @@ module.exports = {
   listFinanzasMovimientos,
   findUserSubscriptionByEmail,
   reactivateMembershipByUser,
+  listAdicionalesConsultorio,
+  activarAdicionalConsultorio,
+  rechazarAdicionalConsultorio,
 }

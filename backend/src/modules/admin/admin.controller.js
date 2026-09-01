@@ -49,10 +49,48 @@ async function reactivateMembership(req, res, next) {
   }
 }
 
+async function listAdicionalesConsultorio(req, res, next) {
+  try {
+    const data = await adminService.listAdicionalesConsultorio(req.query.estado)
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function activarAdicionalConsultorio(req, res, next) {
+  try {
+    const data = await adminService.resolverAdicionalConsultorio({
+      idAdicional: req.params.id_adicional,
+      aprobar: true,
+      idUsuarioAdmin: req.user.idUsuario,
+    })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function rechazarAdicionalConsultorio(req, res, next) {
+  try {
+    const data = await adminService.resolverAdicionalConsultorio({
+      idAdicional: req.params.id_adicional,
+      aprobar: false,
+      idUsuarioAdmin: req.user.idUsuario,
+    })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
 module.exports = {
   listUsuarios,
   getUsuarioDetalle,
   getFinanzas,
   getUserSubscription,
   reactivateMembership,
+  listAdicionalesConsultorio,
+  activarAdicionalConsultorio,
+  rechazarAdicionalConsultorio,
 }

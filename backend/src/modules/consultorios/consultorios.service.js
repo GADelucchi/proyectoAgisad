@@ -7,6 +7,11 @@ const { sendSolicitudConsultorioEmail, sendSolicitudResueltaEmail } = require('.
 
 const DAY_TO_INDEX = { Dom: 0, Lun: 1, Mar: 2, Mie: 3, Jue: 4, Vie: 5, Sab: 6 }
 
+// Publicar consultorios es un adicional pago sobre la membresía del médico.
+// El propietario "puro" no lo necesita: su plan ya es exactamente esta capacidad.
+const ADICIONAL_MONTO = 20000
+const ADICIONAL_MAX_CONSULTORIOS = 2
+
 function toMinutes(value) {
   const [h, m] = String(value || '').slice(0, 5).split(':').map(Number)
   return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0)
@@ -138,11 +143,27 @@ async function publicarConsultorio({ idClinica, publicar, requesterIdUsuario, re
   if (!owns) throw new HttpError(403, 'El consultorio no te pertenece')
 
   if (publicar) {
-    await assertMedicoFeatureByMedicoId({
-      idMedico: medico.id_medico,
-      feature: 'permite_publicar_consultorio',
-      denyMessage: 'Tu plan actual no permite publicar consultorios para alquiler',
-    })
+    const adicional = await repo.findAdicionalByMedico(medico.id_medico)
+
+    if (adicional?.estado !== 'activo') {
+      throw new HttpError(
+        402,
+        adicional?.estado === 'pendiente'
+          ? 'Tu solicitud del adicional está pendiente de activación'
+          : 'Necesitás contratar el adicional para publicar consultorios',
+        { code: adicional?.estado === 'pendiente' ? 'ADICIONAL_PENDIENTE' : 'ADICIONAL_REQUERIDO' }
+      )
+    }
+
+    const publicados = await repo.contarPublicadosByMedico(medico.id_medico)
+    const tope = Number(adicional.max_consultorios) || ADICIONAL_MAX_CONSULTORIOS
+    if (publicados >= tope) {
+      throw new HttpError(
+        409,
+        `Tu adicional permite publicar hasta ${tope} consultorios. Si necesitás más, la cuenta de propietario está pensada para eso.`,
+        { code: 'ADICIONAL_TOPE' }
+      )
+    }
   }
 
   await repo.marcarClinicaCompartida({ idClinica, compartido: publicar })
@@ -424,6 +445,90 @@ async function reporteUso({ idClinica, desde, hasta, requesterIdUsuario, request
   }
 }
 
+/**
+ * Estado del adicional para el panel del médico: si su plan lo habilita a
+ * contratarlo, si ya lo tiene, y cuántos consultorios le quedan por publicar.
+ */
+async function getEstadoAdicional({ requesterIdUsuario, requesterRol }) {
+  const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+
+  let planHabilita = true
+  try {
+    await assertMedicoFeatureByMedicoId({
+      idMedico: medico.id_medico,
+      feature: 'permite_publicar_consultorio',
+      denyMessage: 'plan no habilitado',
+    })
+  } catch {
+    planHabilita = false
+  }
+
+  const adicional = await repo.findAdicionalByMedico(medico.id_medico)
+  const publicados = await repo.contarPublicadosByMedico(medico.id_medico)
+  const tope = Number(adicional?.max_consultorios) || ADICIONAL_MAX_CONSULTORIOS
+
+  return {
+    plan_habilita: planHabilita,
+    estado: adicional?.estado || null,
+    monto_mensual: Number(adicional?.monto_mensual) || ADICIONAL_MONTO,
+    max_consultorios: tope,
+    publicados,
+    puede_publicar: adicional?.estado === 'activo' && publicados < tope,
+    solicitado_en: adicional?.solicitado_en || null,
+    activado_en: adicional?.activado_en || null,
+  }
+}
+
+async function solicitarAdicional({ requesterIdUsuario, requesterRol }) {
+  const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+
+  // El plan tiene que admitir el adicional (Inicial no lo admite).
+  await assertMedicoFeatureByMedicoId({
+    idMedico: medico.id_medico,
+    feature: 'permite_publicar_consultorio',
+    denyMessage: 'Tu plan actual no permite contratar el adicional de consultorios. Cambiá a Medio o superior.',
+  })
+
+  const existente = await repo.findAdicionalByMedico(medico.id_medico)
+  if (existente?.estado === 'activo') {
+    throw new HttpError(409, 'Ya tenés el adicional activo')
+  }
+  if (existente?.estado === 'pendiente') {
+    throw new HttpError(409, 'Ya tenés una solicitud pendiente de activación')
+  }
+
+  const idAdicional = await repo.createAdicional({
+    idMedico: medico.id_medico,
+    montoMensual: ADICIONAL_MONTO,
+    maxConsultorios: ADICIONAL_MAX_CONSULTORIOS,
+  })
+
+  return {
+    id_adicional: idAdicional,
+    estado: 'pendiente',
+    monto_mensual: ADICIONAL_MONTO,
+    max_consultorios: ADICIONAL_MAX_CONSULTORIOS,
+  }
+}
+
+async function cancelarAdicional({ requesterIdUsuario, requesterRol }) {
+  const medico = await resolveMedicoOrThrow({ requesterIdUsuario, requesterRol })
+  const adicional = await repo.findAdicionalByMedico(medico.id_medico)
+  if (!adicional) {
+    throw new HttpError(404, 'No tenés un adicional contratado')
+  }
+
+  // Al dar de baja el adicional se despublican los consultorios: dejarlos
+  // visibles sin adicional activo permitiría seguir recibiendo solicitudes.
+  const propios = await repo.listClinicasCompartidasByMedicoDueno(medico.id_medico)
+  for (const c of propios) {
+    await repo.marcarClinicaCompartida({ idClinica: c.id_clinica, compartido: false })
+  }
+
+  await repo.cancelarAdicional(adicional.id_adicional)
+  return { estado: 'cancelado', despublicados: propios.length }
+}
+
 module.exports = {
   listPublicos,
   listMisConsultorios,
@@ -439,4 +544,7 @@ module.exports = {
   listMedicosVinculados,
   desvincularMedico,
   reporteUso,
+  getEstadoAdicional,
+  solicitarAdicional,
+  cancelarAdicional,
 }

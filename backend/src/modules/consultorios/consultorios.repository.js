@@ -413,6 +413,53 @@ async function listClinicasCompartidasByMedicoDueno(idMedico) {
   )
 }
 
+async function findAdicionalByMedico(idMedico) {
+  const rows = await query(
+    `SELECT id_adicional, id_medico, estado, monto_mensual, max_consultorios,
+            DATE_FORMAT(solicitado_en, '%d/%m/%Y') AS solicitado_en,
+            DATE_FORMAT(activado_en, '%d/%m/%Y') AS activado_en
+     FROM medico_adicional_consultorios
+     WHERE id_medico = :idMedico
+       AND estado IN ('pendiente', 'activo')
+     ORDER BY id_adicional DESC
+     LIMIT 1`,
+    { idMedico }
+  )
+  return rows[0] || null
+}
+
+async function createAdicional({ idMedico, montoMensual, maxConsultorios }) {
+  const result = await query(
+    `INSERT INTO medico_adicional_consultorios (id_medico, monto_mensual, max_consultorios)
+     VALUES (:idMedico, :montoMensual, :maxConsultorios)`,
+    { idMedico, montoMensual, maxConsultorios }
+  )
+  return result.insertId
+}
+
+async function cancelarAdicional(idAdicional) {
+  await query(
+    `UPDATE medico_adicional_consultorios
+     SET estado = 'cancelado', cancelado_en = NOW()
+     WHERE id_adicional = :idAdicional`,
+    { idAdicional }
+  )
+}
+
+async function contarPublicadosByMedico(idMedico) {
+  const rows = await query(
+    `SELECT COUNT(*) AS total
+     FROM medico_clinicas mc
+     INNER JOIN clinicas c ON c.id_clinica = mc.id_clinica
+     WHERE mc.id_medico = :idMedico
+       AND mc.activo = 1
+       AND mc.es_propietario = 1
+       AND c.compartido = 1`,
+    { idMedico }
+  )
+  return Number(rows[0]?.total || 0)
+}
+
 module.exports = {
   findPropietarioByUserId,
   findMedicoByUserId,
@@ -439,4 +486,8 @@ module.exports = {
   listMedicosVinculados,
   findOwnerEmailByClinica,
   listClinicasCompartidasByMedicoDueno,
+  findAdicionalByMedico,
+  createAdicional,
+  cancelarAdicional,
+  contarPublicadosByMedico,
 }

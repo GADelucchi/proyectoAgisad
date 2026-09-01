@@ -21,6 +21,11 @@ router.get('/:id_clinica/medicos', requireAuth, requireRoles('propietario', 'med
 router.delete('/:id_clinica/medicos/:id_medico', requireAuth, requireRoles('propietario', 'medico'), controller.desvincularMedico)
 router.get('/:id_clinica/reporte-uso', requireAuth, requireRoles('propietario', 'medico'), controller.reporteUso)
 
+// Adicional pago para publicar consultorios propios
+router.get('/adicional', requireAuth, requireRoles('medico'), controller.getEstadoAdicional)
+router.post('/adicional', requireAuth, requireRoles('medico'), controller.solicitarAdicional)
+router.delete('/adicional', requireAuth, requireRoles('medico'), controller.cancelarAdicional)
+
 // Lado médico inquilino
 router.get('/solicitudes/mias', requireAuth, requireRoles('medico'), controller.listMisSolicitudes)
 router.post('/:id_clinica/solicitudes', requireAuth, requireRoles('medico'), controller.crearSolicitud)

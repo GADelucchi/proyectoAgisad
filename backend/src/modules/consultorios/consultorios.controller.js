@@ -196,6 +196,42 @@ async function reporteUso(req, res, next) {
   }
 }
 
+async function getEstadoAdicional(req, res, next) {
+  try {
+    const data = await service.getEstadoAdicional({
+      requesterIdUsuario: req.user.idUsuario,
+      requesterRol: req.user.rol,
+    })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function solicitarAdicional(req, res, next) {
+  try {
+    const data = await service.solicitarAdicional({
+      requesterIdUsuario: req.user.idUsuario,
+      requesterRol: req.user.rol,
+    })
+    res.status(201).json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function cancelarAdicional(req, res, next) {
+  try {
+    const data = await service.cancelarAdicional({
+      requesterIdUsuario: req.user.idUsuario,
+      requesterRol: req.user.rol,
+    })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
 module.exports = {
   listPublicos,
   listMisConsultorios,
@@ -212,4 +248,7 @@ module.exports = {
   listMedicosVinculados,
   desvincularMedico,
   reporteUso,
+  getEstadoAdicional,
+  solicitarAdicional,
+  cancelarAdicional,
 }
