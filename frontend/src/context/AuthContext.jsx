@@ -62,9 +62,18 @@ export function AuthProvider({ children }) {
     localStorage.removeItem(STORAGE_KEYS.token);
   }
 
+  // Igual que login(), pero a partir de una sesión ya emitida por el backend
+  // (ej. al verificar el email con éxito) en vez de llamar a /auth/login.
+  function completarSesion(token, user) {
+    const normalized = normalizeUserForUi(user);
+    setUsuario(normalized);
+    localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(normalized));
+    localStorage.setItem(STORAGE_KEYS.token, token);
+  }
+
   return (
     <AuthContext.Provider
-      value={{ usuario, login, logout }}
+      value={{ usuario, login, logout, completarSesion }}
     >
       {children}
     </AuthContext.Provider>

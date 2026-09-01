@@ -154,7 +154,7 @@ export default function RegistroMedicoPage() {
         })
       }
 
-      navigate('/login')
+      navigate('/verificar-email', { state: { email: form.email } })
     } catch (apiErr) {
       if (apiErr instanceof ApiError) {
         setError(apiErr.message || 'No se pudo crear la cuenta.')

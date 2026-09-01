@@ -31,6 +31,10 @@ export default function LoginPage() {
     } catch (err) {
       console.error('[LoginPage] login falló', err)
       if (err instanceof ApiError) {
+        if (err.details?.code === 'EMAIL_NO_VERIFICADO') {
+          navigate('/verificar-email', { state: { email: form.email } })
+          return
+        }
         if (err.status === 401) {
           setError('Credenciales incorrectas.')
         } else {

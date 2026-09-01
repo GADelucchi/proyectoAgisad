@@ -1,6 +1,4 @@
 const bcrypt = require('bcryptjs')
-const jwt = require('jsonwebtoken')
-const env = require('../../config/env')
 const HttpError = require('../../utils/httpError')
 const { pool } = require('../../db/query')
 const {
@@ -8,9 +6,10 @@ const {
   findUserById,
   findRoleIdByName,
   existsUsername,
-  updateUltimoLogin,
 } = require('./auth.repository')
+const { issueSession, buildUserPayload } = require('./session')
 const { normalizePlanCode } = require('../membresias/membresias.service')
+const { emitirCodigo } = require('../email-verification/email-verification.service')
 const {
   validateEmail,
   validatePassword,
@@ -20,43 +19,6 @@ const {
   validateMatricula,
   validateTextField,
 } = require('../../utils/validators')
-
-function buildTokenPayload(user) {
-  return {
-    idUsuario: user.id_usuario,
-    idRol: user.id_rol,
-    rol: user.rol,
-    username: user.username,
-    email: user.email,
-    nombre: user.nombre,
-  }
-}
-
-function buildUserPayload(user) {
-  const membresia_vencida = user.rol !== 'paciente' && user.id_membresia && !Number(user.membresia_activa_vigente)
-  
-  return {
-    ...buildTokenPayload(user),
-    membresia: {
-      id_membresia: user.id_membresia || null,
-      plan_codigo: user.plan_codigo || null,
-      plan_nombre: user.plan_nombre || null,
-      estado: user.membresia_estado || null,
-      pagado_hasta: user.membresia_pagado_hasta || null,
-      es_trial: Boolean(user.es_trial),
-      fecha_inicio_trial: user.fecha_inicio_trial || null,
-      fecha_fin_trial: user.fecha_fin_trial || null,
-      activa_vigente: Boolean(user.membresia_activa_vigente),
-      membresia_vencida: membresia_vencida,
-      permite_turnos: Boolean(user.permite_turnos),
-      permite_asistentes: Boolean(user.permite_asistentes),
-      limite_asistentes:
-        user.limite_asistentes === null || user.limite_asistentes === undefined
-          ? null
-          : Number(user.limite_asistentes),
-    },
-  }
-}
 
 function normalizeText(value) {
   return typeof value === 'string' ? value.trim() : ''
@@ -334,11 +296,11 @@ async function createMembershipForUser(conn, { userId, plan }) {
   }
 }
 
-async function createBaseUser(conn, { roleName, email, password, username }) {
+async function createBaseUser(conn, { roleName, email, password, username, emailVerificado = false }) {
   // Validar email y password
   const validatedEmail = validateEmail(email)
   const validatedPassword = validatePassword(password)
-  
+
   const roleId = await findRoleIdByName(roleName)
   if (!roleId) {
     throw new HttpError(500, `No existe el rol ${roleName}. Cargar datos base primero`)
@@ -349,8 +311,8 @@ async function createBaseUser(conn, { roleName, email, password, username }) {
 
   const [userResult] = await conn.execute(
     `INSERT INTO usuarios (id_rol, username, email, password_hash, email_verificado, activo)
-     VALUES (?, ?, ?, ?, 0, 1)`,
-    [roleId, resolvedUsername, validatedEmail, hashedPassword]
+     VALUES (?, ?, ?, ?, ?, 1)`,
+    [roleId, resolvedUsername, validatedEmail, hashedPassword, emailVerificado ? 1 : 0]
   )
 
   return { userId: userResult.insertId, username: resolvedUsername }
@@ -371,16 +333,11 @@ async function login({ email, password }) {
     throw new HttpError(401, 'Credenciales invalidas')
   }
 
-  await updateUltimoLogin(user.id_usuario)
-
-  const token = jwt.sign(buildTokenPayload(user), env.JWT_SECRET, {
-    expiresIn: env.JWT_EXPIRES_IN,
-  })
-
-  return {
-    token,
-    user: buildUserPayload(user),
+  if (!user.email_verificado) {
+    throw new HttpError(403, 'Tu email todavía no está verificado', { code: 'EMAIL_NO_VERIFICADO' })
   }
+
+  return issueSession(user)
 }
 
 async function getCurrentUser(idUsuario) {
@@ -395,7 +352,11 @@ async function getCurrentUser(idUsuario) {
 // requireAceptaTyc=false: alta interna hecha por un médico/asistente en nombre
 // del paciente (paciente no presente, no puede tildar el checkbox). El paciente
 // da su propio consentimiento más adelante, al entrar por "olvidé mi contraseña".
-async function registerPaciente(input, { requireAceptaTyc = true } = {}) {
+// autoVerificarEmail=true: mismo caso — ese paciente nunca recibe la clave
+// generada al azar, su único camino de acceso es "olvidé mi contraseña", que ya
+// prueba control del email por sí solo. Pedirle además un código lo dejaría sin
+// ninguna pantalla desde la cual verificarlo.
+async function registerPaciente(input, { requireAceptaTyc = true, autoVerificarEmail = false } = {}) {
   const required = ['email', 'password', 'dni', 'nombre', 'apellido']
   for (const field of required) {
     if (!input[field]) {
@@ -422,6 +383,7 @@ async function registerPaciente(input, { requireAceptaTyc = true } = {}) {
       email: input.email,
       password: input.password,
       username: input.username,
+      emailVerificado: autoVerificarEmail,
     })
 
     const idObraSocial =
@@ -448,6 +410,14 @@ async function registerPaciente(input, { requireAceptaTyc = true } = {}) {
     )
 
     await conn.commit()
+
+    if (!autoVerificarEmail) {
+      try {
+        await emitirCodigo(userId, input.email)
+      } catch (err) {
+        console.error('[auth] no se pudo enviar el código de verificación:', err.message)
+      }
+    }
 
     return {
       id_usuario: userId,
@@ -569,6 +539,12 @@ async function registerMedico(input) {
 
     await conn.commit()
 
+    try {
+      await emitirCodigo(userId, input.email)
+    } catch (err) {
+      console.error('[auth] no se pudo enviar el código de verificación:', err.message)
+    }
+
     return {
       id_usuario: userId,
       id_medico: idMedico,
@@ -647,6 +623,12 @@ async function registerGerente(input) {
     })
 
     await conn.commit()
+
+    try {
+      await emitirCodigo(userId, input.email)
+    } catch (err) {
+      console.error('[auth] no se pudo enviar el código de verificación:', err.message)
+    }
 
     return {
       id_usuario: userId,

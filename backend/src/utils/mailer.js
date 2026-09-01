@@ -112,6 +112,28 @@ async function sendPacienteMensajeEmail({ to, medico, paciente, asunto, mensaje 
   })
 }
 
+async function sendVerificacionEmailCodigo({ to, codigo }) {
+  await transporter.sendMail({
+    from: env.MAIL_FROM,
+    to,
+    subject: 'Verificá tu email — Agisad',
+    text: [
+      'Bienvenido a Agisad.',
+      '',
+      'Tu código de verificación es:',
+      '',
+      `   ${codigo}`,
+      '',
+      'Ingresalo en la pantalla de verificación para activar tu cuenta.',
+      'El código expira en 15 minutos.',
+      '',
+      'Si no creaste una cuenta en Agisad, podés ignorar este mensaje.',
+      '',
+      '— Agisad',
+    ].join('\n'),
+  })
+}
+
 async function sendInvitacionMedicoEmail({ to, gerente, clinica, link }) {
   await transporter.sendMail({
     from: env.MAIL_FROM,
@@ -135,4 +157,5 @@ module.exports = {
   sendRecetaSolicitudEmail,
   sendPacienteMensajeEmail,
   sendInvitacionMedicoEmail,
+  sendVerificacionEmailCodigo,
 }

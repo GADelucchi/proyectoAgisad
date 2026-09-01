@@ -16,7 +16,8 @@ docs
 .env.*
 
 # Screenshots de prueba / promoción, no se versionan
-testImgs
+/testImgs
+/.claude
 
 # Editor directories and files
 .vscode/*

@@ -74,7 +74,7 @@ export default function RegistroGerentePage() {
         direccion: form.direccion,
         acepta_tyc: aceptaTyc,
       })
-      navigate('/login')
+      navigate('/verificar-email', { state: { email: form.email } })
     } catch (apiErr) {
       if (apiErr instanceof ApiError) {
         setError(apiErr.message || 'No se pudo crear la cuenta.')

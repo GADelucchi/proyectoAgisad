@@ -10,4 +10,6 @@ export const authApi = {
   registerAsistente: (data) => api.post('/asistentes', data),
   forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
   resetPassword: (token, password) => api.post(`/auth/reset-password/${token}`, { password }),
+  verificarEmail: (email, codigo) => api.post('/auth/verificar-email', { email, codigo }),
+  reenviarCodigo: (email) => api.post('/auth/verificar-email/reenviar', { email }),
 }

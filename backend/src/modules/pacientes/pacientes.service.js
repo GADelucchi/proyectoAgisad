@@ -127,7 +127,7 @@ async function createPacienteManual({ fields = {}, requesterIdUsuario, requester
       id_obra_social: idObraSocial,
       nro_obra_social: fields.nro_obra_social,
     })),
-  }, { requireAceptaTyc: false })
+  }, { requireAceptaTyc: false, autoVerificarEmail: true })
 
   const creado = await findPacienteByUserId(idUsuario)
   await upsertPacienteVinculo({ idPaciente: creado.id_paciente, idMedico, idClinica })

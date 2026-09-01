@@ -63,7 +63,7 @@ export default function RegistroPacientePage() {
         nro_obra_social: form.nroAfiliado || null,
         acepta_tyc: aceptaTyc,
       })
-      navigate('/verificar-email')
+      navigate('/verificar-email', { state: { email: form.email } })
     } catch (apiErr) {
       if (apiErr instanceof ApiError) {
         setError(apiErr.message || 'No se pudo crear la cuenta.')

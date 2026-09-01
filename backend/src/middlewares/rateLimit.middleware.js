@@ -15,6 +15,20 @@ const loginFailedAttemptsLimiter = rateLimit({
   },
 })
 
+const verificacionRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    console.warn(`[rate-limit] verificacion 429 ip=${req.ip}`)
+    res.status(429).json({
+      message: 'Demasiados intentos. Reintentá más tarde.',
+    })
+  },
+})
+
 module.exports = {
   loginFailedAttemptsLimiter,
+  verificacionRateLimiter,
 }
