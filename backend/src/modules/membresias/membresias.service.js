@@ -48,6 +48,7 @@ async function getCurrentMembershipByUserId(idUsuario) {
       COALESCE(mp_fallback.permite_turnos, mp.permite_turnos, 1) AS permite_turnos,
       COALESCE(mp_fallback.permite_asistentes, mp.permite_asistentes, 1) AS permite_asistentes,
       COALESCE(mp_fallback.limite_asistentes, mp.limite_asistentes) AS limite_asistentes,
+      COALESCE(mp_fallback.permite_publicar_consultorio, mp.permite_publicar_consultorio, 0) AS permite_publicar_consultorio,
       CASE
         WHEN m.estado = 'activa' AND m.es_trial = 1 AND (m.fecha_fin_trial IS NULL OR m.fecha_fin_trial >= CURDATE()) THEN 1
         WHEN m.estado = 'activa' AND m.es_trial = 0 AND (m.pagado_hasta IS NULL OR m.pagado_hasta >= CURDATE()) THEN 1

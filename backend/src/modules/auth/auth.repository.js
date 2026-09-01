@@ -28,11 +28,13 @@ async function findUserByEmail(email) {
       COALESCE(mp_fallback.permite_turnos, mp.permite_turnos, 1) AS permite_turnos,
       COALESCE(mp_fallback.permite_asistentes, mp.permite_asistentes, 1) AS permite_asistentes,
       COALESCE(mp_fallback.limite_asistentes, mp.limite_asistentes) AS limite_asistentes,
+      COALESCE(mp_fallback.permite_publicar_consultorio, mp.permite_publicar_consultorio, 0) AS permite_publicar_consultorio,
        COALESCE(
          CONCAT(p.nombre, ' ', p.apellido),
          CONCAT(m.nombre, ' ', m.apellido),
          CONCAT(g.nombre, ' ', g.apellido),
          CONCAT(a.nombre, ' ', a.apellido),
+         CONCAT(pr.nombre, ' ', pr.apellido),
          u.username
        ) AS nombre
      FROM usuarios u
@@ -41,6 +43,7 @@ async function findUserByEmail(email) {
      LEFT JOIN medicos m ON m.id_usuario = u.id_usuario
      LEFT JOIN gerentes g ON g.id_usuario = u.id_usuario
      LEFT JOIN asistentes a ON a.id_usuario = u.id_usuario
+     LEFT JOIN propietarios pr ON pr.id_usuario = u.id_usuario
      LEFT JOIN (
        SELECT m1.*
        FROM membresias m1
@@ -89,11 +92,13 @@ async function findUserById(idUsuario) {
       COALESCE(mp_fallback.permite_turnos, mp.permite_turnos, 1) AS permite_turnos,
       COALESCE(mp_fallback.permite_asistentes, mp.permite_asistentes, 1) AS permite_asistentes,
       COALESCE(mp_fallback.limite_asistentes, mp.limite_asistentes) AS limite_asistentes,
+      COALESCE(mp_fallback.permite_publicar_consultorio, mp.permite_publicar_consultorio, 0) AS permite_publicar_consultorio,
        COALESCE(
          CONCAT(p.nombre, ' ', p.apellido),
          CONCAT(m.nombre, ' ', m.apellido),
          CONCAT(g.nombre, ' ', g.apellido),
          CONCAT(a.nombre, ' ', a.apellido),
+         CONCAT(pr.nombre, ' ', pr.apellido),
          u.username
        ) AS nombre
      FROM usuarios u
@@ -102,6 +107,7 @@ async function findUserById(idUsuario) {
      LEFT JOIN medicos m ON m.id_usuario = u.id_usuario
      LEFT JOIN gerentes g ON g.id_usuario = u.id_usuario
      LEFT JOIN asistentes a ON a.id_usuario = u.id_usuario
+     LEFT JOIN propietarios pr ON pr.id_usuario = u.id_usuario
      LEFT JOIN (
        SELECT m1.*
        FROM membresias m1

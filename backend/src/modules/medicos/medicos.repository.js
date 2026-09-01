@@ -184,6 +184,14 @@ async function findActiveTycByMedico(idMedico) {
   return rows[0] || null
 }
 
+async function findClinicaCompartida(idClinica) {
+  const rows = await query(
+    `SELECT id_clinica, compartido FROM clinicas WHERE id_clinica = :idClinica LIMIT 1`,
+    { idClinica }
+  )
+  return rows[0] || null
+}
+
 async function findTurnosConfigByMedico(idMedico) {
   const configRows = await query(
     `SELECT id_medico,
@@ -666,6 +674,7 @@ module.exports = {
   findMedicoIdByUserId,
   findActiveTycByMedico,
   findTurnosConfigByMedico,
+  findClinicaCompartida,
   upsertTurnosConfigByMedico,
   deactivateTycByMedico,
   insertMedicoTyc,

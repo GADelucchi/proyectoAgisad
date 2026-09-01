@@ -126,6 +126,14 @@ async function getDisponibilidad({ idMedico, idClinica, fecha, duracionMinutos =
     throw new HttpError(400, 'id_medico, id_clinica y fecha son obligatorios')
   }
 
+  // En un consultorio alquilado, los horarios los define el dueño y la
+  // ocupación es de todos los médicos que lo usan, no solo de este.
+  const clinica = await medicosRepo.findClinicaCompartida(Number(idClinica))
+  if (clinica?.compartido) {
+    const { getDisponibilidadCompartida } = require('../consultorios/consultorios.service')
+    return getDisponibilidadCompartida({ idClinica, fecha, duracionMinutos })
+  }
+
   const turnosConfig = await medicosRepo.findTurnosConfigByMedico(Number(idMedico))
   const duracionGeneral = Number(turnosConfig?.config?.duracion_turno_estandar || 0)
   const duracionDefault = Number.isFinite(duracionGeneral) && duracionGeneral > 0

@@ -653,10 +653,81 @@ async function registerGerente(input) {
   }
 }
 
+// El propietario alquila consultorios sin atender pacientes: no se le crea
+// clínica al registrarse (las carga después desde su panel) ni perfil médico.
+async function registerPropietario(input) {
+  const required = ['email', 'password', 'nombre', 'apellido']
+  for (const field of required) {
+    if (!input[field]) {
+      throw new HttpError(400, `Falta el campo obligatorio: ${field}`)
+    }
+  }
+  if (!input.acepta_tyc) {
+    throw new HttpError(400, 'Tenés que aceptar los términos y condiciones y la política de privacidad')
+  }
+
+  const validatedNombre = validateName(input.nombre, 'El nombre')
+  const validatedApellido = validateName(input.apellido, 'El apellido')
+  const validatedTelefono = validatePhoneNumber(input.telefono, false)
+
+  const conn = await pool.getConnection()
+
+  try {
+    await conn.beginTransaction()
+
+    const { userId, username } = await createBaseUser(conn, {
+      roleName: 'propietario',
+      email: input.email,
+      password: input.password,
+      username: input.username,
+    })
+
+    const [propietarioResult] = await conn.execute(
+      `INSERT INTO propietarios (id_usuario, nombre, apellido, telefono)
+       VALUES (?, ?, ?, ?)`,
+      [userId, validatedNombre, validatedApellido, validatedTelefono]
+    )
+
+    await createMembershipForUser(conn, {
+      userId,
+      plan: input.plan || 'espacios',
+    })
+
+    await conn.commit()
+
+    try {
+      await emitirCodigo(userId, input.email)
+    } catch (err) {
+      console.error('[auth] no se pudo enviar el código de verificación:', err.message)
+    }
+
+    return {
+      id_usuario: userId,
+      id_propietario: propietarioResult.insertId,
+      username,
+      email: input.email,
+      rol: 'propietario',
+      plan_solicitado: input.plan || 'espacios',
+      estado_onboarding: 'pendiente_membresia',
+    }
+  } catch (err) {
+    await conn.rollback()
+
+    if (err && err.code === 'ER_DUP_ENTRY') {
+      throw new HttpError(409, 'Username o email ya existen')
+    }
+
+    throw err
+  } finally {
+    conn.release()
+  }
+}
+
 module.exports = {
   login,
   getCurrentUser,
   registerPaciente,
   registerMedico,
   registerGerente,
+  registerPropietario,
 }

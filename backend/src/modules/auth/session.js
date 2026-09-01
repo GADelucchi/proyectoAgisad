@@ -35,6 +35,7 @@ function buildUserPayload(user) {
         user.limite_asistentes === null || user.limite_asistentes === undefined
           ? null
           : Number(user.limite_asistentes),
+      permite_publicar_consultorio: Boolean(user.permite_publicar_consultorio),
     },
   }
 }

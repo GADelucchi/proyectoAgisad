@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Edit2, Plus, Trash2 } from 'lucide-react'
 import Button from '../../../components/ui/Button'
 import { useAuth } from '../../../context/AuthContext'
 import AltaAsistenteForm from '../../../components/forms/AltaAsistenteForm'
 import { authApi } from '../../../services/auth.api'
 import { medicosApi } from '../../../services/medicos.api'
+import { consultoriosApi } from '../../../services/consultorios.api'
 import { asistentesApi } from '../../../services/asistentes.api'
 import SmartDateInput from '../../../components/ui/SmartDateInput'
 import SmartTimeInput from '../../../components/ui/SmartTimeInput'
@@ -100,8 +102,10 @@ function mapTipoTurno(row, index) {
 
 export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange }) {
   const { usuario } = useAuth()
+  const navigate = useNavigate()
   const doctorId = String(usuario?.idUsuario || usuario?.id || '')
   const permiteAsistentes = Boolean(usuario?.membresia?.permite_asistentes)
+  const puedePublicar = Boolean(usuario?.membresia?.permite_publicar_consultorio)
   const planNombre = usuario?.membresia?.plan_nombre || usuario?.membresia?.plan_codigo || 'Sin plan'
 
   const [consultorios, setConsultorios] = useState([])
@@ -120,6 +124,7 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
   const [notifCancelacion, setNotifCancelacion] = useState(true)
   const [estadoMailConfig, setEstadoMailConfig] = useState('')
 
+  const [publicados, setPublicados] = useState({})
   const [showClinicForm, setShowClinicForm] = useState(false)
   const [clinicForm, setClinicForm] = useState(clinicFormFromRow())
 
@@ -137,11 +142,17 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
     ])
 
     const mailConfig = await medicosApi.getMyMailConfig().catch(() => null)
+    const compartidos = permiteTurnos
+      ? await consultoriosApi.listMios().catch(() => [])
+      : []
 
     const clinics = Array.isArray(clinicasRows) ? clinicasRows : []
     const tipos = Array.isArray(turnosConfig?.tipos_turno) ? turnosConfig.tipos_turno.map(mapTipoTurno) : []
 
     setConsultorios(clinics)
+    setPublicados(Object.fromEntries(
+      (Array.isArray(compartidos) ? compartidos : []).map((c) => [c.id_clinica, Boolean(c.compartido)])
+    ))
     setBloqueos(Array.isArray(bloqueosRows) ? bloqueosRows : [])
     setAsistentes(Array.isArray(asistentesRows) ? asistentesRows.map(mapAsistente) : [])
     setDuracion(String(turnosConfig?.duracion_turno_estandar || 30))
@@ -341,6 +352,18 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
       setEstadoCrud(err?.message || 'No se pudo guardar el consultorio.')
     } finally {
       setGuardandoClinica(false)
+    }
+  }
+
+  async function togglePublicar(idClinica, publicar) {
+    try {
+      await consultoriosApi.publicar(idClinica, publicar)
+      setPublicados((prev) => ({ ...prev, [idClinica]: publicar }))
+      setEstadoCrud(publicar
+        ? 'Consultorio publicado para alquiler.'
+        : 'Consultorio despublicado.')
+    } catch (err) {
+      setEstadoCrud(err?.message || 'No se pudo cambiar la publicación.')
     }
   }
 
@@ -568,9 +591,14 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
       <section className="config-section surface-raised">
         <div className="config-section-header">
           <h3>Mis consultorios</h3>
-          <Button variant="accent" size="sm" onClick={openNewClinica}>
-            <Plus size={14} /> Agregar consultorio
-          </Button>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <Button variant="secondary" size="sm" onClick={() => navigate('/medico/consultorios')}>
+              Buscar consultorios en alquiler
+            </Button>
+            <Button variant="accent" size="sm" onClick={openNewClinica}>
+              <Plus size={14} /> Agregar consultorio
+            </Button>
+          </div>
         </div>
         <p className="config-section-sub">Alta, edicion y baja de consultorios del medico autenticado.</p>
         {estadoCrud && <p className="config-terms-msg">{estadoCrud}</p>}
@@ -584,7 +612,16 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
               </div>
               <p className="config-consultorio-horarios">{c.direccion || 'Sin direccion'}</p>
             </div>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              {puedePublicar && (
+                <Button
+                  variant={publicados[c.id] ? 'accent' : 'ghost'}
+                  size="sm"
+                  onClick={() => togglePublicar(c.id, !publicados[c.id])}
+                >
+                  {publicados[c.id] ? 'Publicado' : 'Publicar para alquiler'}
+                </Button>
+              )}
               <Button variant="ghost" size="sm" onClick={() => openEditClinica(c)}><Edit2 size={13} /> Editar</Button>
               <Button variant="danger" size="sm" onClick={() => deleteClinica(c.id)}><Trash2 size={13} /> Eliminar</Button>
             </div>

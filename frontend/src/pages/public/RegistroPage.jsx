@@ -19,6 +19,14 @@ const CARDS = [
     to: '/registro/profesional',
     cta: 'Crear cuenta profesional',
   },
+  {
+    role: 'propietario',
+    title: 'Propietario',
+    description: 'Alquilás consultorios a profesionales, sin atender pacientes.',
+    bullets: ['Publicá tus espacios', 'Definí horarios disponibles', 'Reporte de horas por médico'],
+    to: '/registro/propietario',
+    cta: 'Crear cuenta de propietario',
+  },
 ]
 
 export default function RegistroPage() {

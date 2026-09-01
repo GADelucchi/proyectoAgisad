@@ -45,10 +45,20 @@ async function registerGerente(req, res, next) {
   }
 }
 
+async function registerPropietario(req, res, next) {
+  try {
+    const payload = await authService.registerPropietario(req.body)
+    res.status(201).json(payload)
+  } catch (err) {
+    next(err)
+  }
+}
+
 module.exports = {
   login,
   me,
   registerPaciente,
   registerMedico,
   registerGerente,
+  registerPropietario,
 }

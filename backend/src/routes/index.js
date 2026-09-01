@@ -8,6 +8,7 @@ const pacientesRoutes = require('../modules/pacientes/pacientes.routes')
 const asistentesRoutes = require('../modules/asistentes/asistentes.routes')
 const adminRoutes = require('../modules/admin/admin.routes')
 const gerentesRoutes = require('../modules/gerentes/gerentes.routes')
+const consultoriosRoutes = require('../modules/consultorios/consultorios.routes')
 
 const router = Router()
 
@@ -24,5 +25,6 @@ router.use('/pacientes', pacientesRoutes)
 router.use('/asistentes', asistentesRoutes)
 router.use('/admin', adminRoutes)
 router.use('/gerentes', gerentesRoutes)
+router.use('/consultorios', consultoriosRoutes)
 
 module.exports = router

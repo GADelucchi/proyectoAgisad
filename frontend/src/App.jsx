@@ -9,12 +9,14 @@ import MedicoLayout    from './layouts/MedicoLayout'
 import AsistenteLayout from './layouts/AsistenteLayout'
 import AdminLayout     from './layouts/AdminLayout'
 import GerenteLayout   from './layouts/GerenteLayout'
+import PropietarioLayout from './layouts/PropietarioLayout'
 import LandingPage          from './pages/public/LandingPage'
 import LoginPage            from './pages/public/LoginPage'
 import RegistroPage         from './pages/public/RegistroPage'
 import RegistroPacientePage from './pages/public/RegistroPacientePage'
 import RegistroMedicoPage   from './pages/public/RegistroMedicoPage'
 import RegistroGerentePage  from './pages/public/RegistroGerentePage'
+import RegistroPropietarioPage from './pages/public/RegistroPropietarioPage'
 import InvitacionPage       from './pages/public/InvitacionPage'
 import VerificarEmailPage   from './pages/public/VerificarEmailPage'
 import RecuperarPasswordPage from './pages/public/RecuperarPasswordPage'
@@ -36,6 +38,8 @@ const PanelMedicoPage     = lazy(() => import('./pages/medico/PanelMedicoPage'))
 const PanelAsistentePage  = lazy(() => import('./pages/asistente/PanelAsistentePage'))
 const PanelAdminPage      = lazy(() => import('./pages/admin/PanelAdminPage'))
 const PanelGerentePage    = lazy(() => import('./pages/gerente/PanelGerentePage'))
+const PanelPropietarioPage = lazy(() => import('./pages/propietario/PanelPropietarioPage'))
+const ConsultoriosPublicosPage = lazy(() => import('./pages/medico/ConsultoriosPublicosPage'))
 
 export default function App() {
   return (
@@ -53,6 +57,7 @@ export default function App() {
                 <Route path="/registro/profesional" element={<RegistroMedicoPage />} />
                 <Route path="/registro/medico" element={<RegistroMedicoPage />} />
                 <Route path="/registro/gerente" element={<RegistroGerentePage />} />
+                <Route path="/registro/propietario" element={<RegistroPropietarioPage />} />
                 <Route path="/invitacion/:token" element={<InvitacionPage />} />
                 <Route path="/verificar-email" element={<VerificarEmailPage />} />
                 <Route path="/recuperar-password" element={<RecuperarPasswordPage />} />
@@ -73,6 +78,7 @@ export default function App() {
               </Route>
               <Route element={<MedicoLayout />}>
                 <Route path="/medico" element={<PanelMedicoPage />} />
+                <Route path="/medico/consultorios" element={<ConsultoriosPublicosPage />} />
               </Route>
               <Route element={<AsistenteLayout />}>
                 <Route path="/asistente" element={<PanelAsistentePage />} />
@@ -82,6 +88,9 @@ export default function App() {
               </Route>
               <Route element={<GerenteLayout />}>
                 <Route path="/gerente" element={<PanelGerentePage />} />
+              </Route>
+              <Route element={<PropietarioLayout />}>
+                <Route path="/propietario" element={<PanelPropietarioPage />} />
               </Route>
             </Routes>
           </Suspense>

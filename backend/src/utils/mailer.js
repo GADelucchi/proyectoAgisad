@@ -188,8 +188,48 @@ async function sendTurnoCanceladoEmail({ to, medico, paciente, fecha, hora, canc
   })
 }
 
+async function sendSolicitudConsultorioEmail({ to, medico, consultorio, mensaje }) {
+  await transporter.sendMail({
+    from: env.MAIL_FROM_TURNOS,
+    to,
+    subject: `Solicitud para usar "${consultorio.nombre}" — Agisad`,
+    text: [
+      `Dr./Dra. ${medico.nombre} ${medico.apellido} solicitó vincularse a tu consultorio "${consultorio.nombre}".`,
+      '',
+      mensaje ? `Mensaje: ${mensaje}` : null,
+      '',
+      'Entrá a Agisad para aceptar o rechazar la solicitud.',
+      '',
+      '— Agisad',
+    ].filter((line) => line !== null).join('\n'),
+  })
+}
+
+async function sendSolicitudResueltaEmail({ to, consultorio, aprobada, motivo }) {
+  await transporter.sendMail({
+    from: env.MAIL_FROM_TURNOS,
+    to,
+    subject: aprobada
+      ? `Solicitud aprobada — ${consultorio.nombre}`
+      : `Solicitud rechazada — ${consultorio.nombre}`,
+    text: [
+      aprobada
+        ? `Tu solicitud para usar el consultorio "${consultorio.nombre}" fue aprobada.`
+        : `Tu solicitud para usar el consultorio "${consultorio.nombre}" fue rechazada.`,
+      '',
+      aprobada
+        ? 'Ya podés ver sus horarios disponibles y agendar desde tu panel.'
+        : (motivo ? `Motivo: ${motivo}` : null),
+      '',
+      '— Agisad',
+    ].filter((line) => line !== null).join('\n'),
+  })
+}
+
 module.exports = {
   sendPasswordResetEmail,
+  sendSolicitudConsultorioEmail,
+  sendSolicitudResueltaEmail,
   sendRecetaSolicitudEmail,
   sendPacienteMensajeEmail,
   sendInvitacionMedicoEmail,

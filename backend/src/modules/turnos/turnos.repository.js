@@ -37,17 +37,38 @@ async function insertTurno(data) {
   try {
     await conn.beginTransaction()
 
-    const [existingRows] = await conn.execute(
-      `SELECT DATE_FORMAT(hora_inicio, '%H:%i') AS hora,
-              DATE_FORMAT(hora_fin, '%H:%i') AS hora_fin,
-              motivo
-       FROM turnos
-       WHERE id_medico = ?
-         AND fecha = ?
-         AND estado NOT IN ('cancelado', 'cancelado_paciente', 'cancelado_clinica')
-       FOR UPDATE`,
-      [data.idMedico, data.fecha]
+    // En un consultorio compartido (alquilado a varios médicos) el conflicto es
+    // por sala física: hay que mirar los turnos de todos los médicos ahí, no
+    // solo los propios.
+    const [clinicaRows] = await conn.execute(
+      'SELECT compartido FROM clinicas WHERE id_clinica = ? LIMIT 1',
+      [data.idClinica]
     )
+    const esCompartido = Boolean(clinicaRows[0]?.compartido)
+
+    const [existingRows] = esCompartido
+      ? await conn.execute(
+        `SELECT DATE_FORMAT(hora_inicio, '%H:%i') AS hora,
+                DATE_FORMAT(hora_fin, '%H:%i') AS hora_fin,
+                motivo
+         FROM turnos
+         WHERE (id_clinica = ? OR id_medico = ?)
+           AND fecha = ?
+           AND estado NOT IN ('cancelado', 'cancelado_paciente', 'cancelado_clinica')
+         FOR UPDATE`,
+        [data.idClinica, data.idMedico, data.fecha]
+      )
+      : await conn.execute(
+        `SELECT DATE_FORMAT(hora_inicio, '%H:%i') AS hora,
+                DATE_FORMAT(hora_fin, '%H:%i') AS hora_fin,
+                motivo
+         FROM turnos
+         WHERE id_medico = ?
+           AND fecha = ?
+           AND estado NOT IN ('cancelado', 'cancelado_paciente', 'cancelado_clinica')
+         FOR UPDATE`,
+        [data.idMedico, data.fecha]
+      )
 
     for (const existing of existingRows) {
       const existingStart = toMinutes(existing.hora)
@@ -295,6 +316,38 @@ async function findTurnoResumenById(idTurno) {
   return rows[0] || null
 }
 
+async function findTurnosTomadosPorClinica({ idClinica, fecha }) {
+  return query(
+    `SELECT DATE_FORMAT(hora_inicio, '%H:%i') AS hora,
+            DATE_FORMAT(hora_fin, '%H:%i') AS hora_fin
+     FROM turnos
+     WHERE id_clinica = :idClinica
+       AND fecha = :fecha
+       AND estado NOT IN ('cancelado', 'cancelado_paciente', 'cancelado_clinica')`,
+    { idClinica, fecha }
+  )
+}
+
+// Horas reservadas (no canceladas) por médico en un consultorio, para que el
+// dueño cobre el alquiler por fuera del sistema.
+async function reporteUsoPorClinica({ idClinica, desde, hasta }) {
+  return query(
+    `SELECT t.id_medico,
+            m.nombre AS medico_nombre,
+            m.apellido AS medico_apellido,
+            COUNT(*) AS turnos,
+            ROUND(SUM(TIMESTAMPDIFF(MINUTE, t.hora_inicio, t.hora_fin)) / 60, 2) AS horas
+     FROM turnos t
+     INNER JOIN medicos m ON m.id_medico = t.id_medico
+     WHERE t.id_clinica = :idClinica
+       AND t.fecha BETWEEN :desde AND :hasta
+       AND t.estado NOT IN ('cancelado', 'cancelado_paciente', 'cancelado_clinica')
+     GROUP BY t.id_medico, m.nombre, m.apellido
+     ORDER BY horas DESC`,
+    { idClinica, desde, hasta }
+  )
+}
+
 module.exports = {
   insertTurno,
   findTurnoById,
@@ -308,4 +361,6 @@ module.exports = {
   findTipoTurnoById,
   findMedicoNotifInfoById,
   findTurnoResumenById,
+  findTurnosTomadosPorClinica,
+  reporteUsoPorClinica,
 }

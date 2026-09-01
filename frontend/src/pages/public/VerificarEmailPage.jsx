@@ -34,6 +34,7 @@ export default function VerificarEmailPage() {
     else if (stored.rol === 'medico') navigate('/medico')
     else if (stored.rol === 'asistente') navigate('/asistente')
     else if (stored.rol === 'gerente') navigate('/gerente')
+    else if (stored.rol === 'propietario') navigate('/propietario')
     else navigate('/paciente')
   }
 
