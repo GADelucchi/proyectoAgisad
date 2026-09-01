@@ -27,9 +27,9 @@ async function insertTurno(data) {
 
   const sql = `
     INSERT INTO turnos (
-      id_paciente, id_medico, id_clinica, fecha, hora_inicio, hora_fin, estado, motivo
+      id_paciente, id_medico, id_clinica, id_tipo_turno, fecha, hora_inicio, hora_fin, estado, motivo
     ) VALUES (
-      :idPaciente, :idMedico, :idClinica, :fecha, :horaInicio, :horaFin, 'pendiente', :motivo
+      :idPaciente, :idMedico, :idClinica, :idTipoTurno, :fecha, :horaInicio, :horaFin, 'pendiente', :motivo
     )
   `
 
@@ -64,6 +64,7 @@ async function insertTurno(data) {
       idPaciente: data.idPaciente,
       idMedico: data.idMedico,
       idClinica: data.idClinica,
+      idTipoTurno: data.idTipoTurno || null,
       fecha: data.fecha,
       horaInicio: data.hora,
       horaFin: horaFin,
@@ -247,6 +248,53 @@ async function medicoPermiteTurnos(idMedico) {
   return Boolean(rows[0].permite_turnos)
 }
 
+async function findTipoTurnoById(idTipoTurno, idMedico) {
+  const rows = await query(
+    `SELECT id_tipo_turno, nombre, duracion_minutos, notificar_nuevo
+     FROM medico_tipos_turno
+     WHERE id_tipo_turno = :idTipoTurno
+       AND id_medico = :idMedico
+       AND activo = 1
+     LIMIT 1`,
+    { idTipoTurno, idMedico }
+  )
+  return rows[0] || null
+}
+
+async function findMedicoNotifInfoById(idMedico) {
+  const rows = await query(
+    `SELECT m.id_medico, m.nombre, m.apellido, u.email,
+            COALESCE(m.notif_turno_nuevo, 1) AS notif_turno_nuevo,
+            COALESCE(m.notif_cancelacion, 1) AS notif_cancelacion
+     FROM medicos m
+     INNER JOIN usuarios u ON u.id_usuario = m.id_usuario
+     WHERE m.id_medico = :idMedico
+     LIMIT 1`,
+    { idMedico }
+  )
+  return rows[0] || null
+}
+
+async function findTurnoResumenById(idTurno) {
+  const rows = await query(
+    `SELECT t.id_turno, t.id_medico, t.id_paciente,
+            DATE_FORMAT(t.fecha, '%d/%m/%Y') AS fecha,
+            DATE_FORMAT(t.hora_inicio, '%H:%i') AS hora,
+            t.estado,
+            p.nombre AS paciente_nombre,
+            p.apellido AS paciente_apellido,
+            tt.nombre AS tipo_turno_nombre,
+            tt.notificar_nuevo AS tipo_notificar_nuevo
+     FROM turnos t
+     INNER JOIN pacientes p ON p.id_paciente = t.id_paciente
+     LEFT JOIN medico_tipos_turno tt ON tt.id_tipo_turno = t.id_tipo_turno
+     WHERE t.id_turno = :idTurno
+     LIMIT 1`,
+    { idTurno }
+  )
+  return rows[0] || null
+}
+
 module.exports = {
   insertTurno,
   findTurnoById,
@@ -257,4 +305,7 @@ module.exports = {
   findMedicoIdByUserId,
   listTurnosByPaciente,
   medicoPermiteTurnos,
+  findTipoTurnoById,
+  findMedicoNotifInfoById,
+  findTurnoResumenById,
 }

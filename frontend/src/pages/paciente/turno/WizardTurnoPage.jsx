@@ -228,6 +228,7 @@ export default function WizardTurnoPage() {
 
     setSubmitError('')
     try {
+      const idTipoTurno = Number(sel.tipo.id)
       await turnosApi.crear({
         id_medico: Number(medicoId),
         id_clinica: Number(sel.consultorio.id),
@@ -236,6 +237,7 @@ export default function WizardTurnoPage() {
         hora: sel.horario,
         motivo_consulta: sel.tipo.label,
         duracion_minutos: Number(sel.tipo.duracion),
+        id_tipo_turno: Number.isFinite(idTipoTurno) ? idTipoTurno : null,
       })
       setStep(4)
     } catch (err) {

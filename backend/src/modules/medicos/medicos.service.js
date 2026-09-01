@@ -302,8 +302,10 @@ async function saveMyTurnosConfig({ input, requesterIdUsuario, requesterRol }) {
   const tiposRaw = Array.isArray(input?.tipos_turno) ? input.tipos_turno : []
   const tiposTurno = tiposRaw
     .map((tipo) => ({
+      idTipoTurno: tipo?.id_tipo_turno ? Number(tipo.id_tipo_turno) : null,
       nombre: String(tipo?.nombre || '').trim(),
       duracion: Number(tipo?.duracion_minutos ?? tipo?.duracion),
+      notificarNuevo: Boolean(tipo?.notificar_nuevo),
     }))
     .filter((tipo) => tipo.nombre)
 
@@ -641,6 +643,8 @@ async function getMyMailConfig({ requesterIdUsuario, requesterRol }) {
 
   return {
     enviar_recetas_mail: Boolean(config.enviar_recetas_mail),
+    notif_turno_nuevo: Boolean(config.notif_turno_nuevo),
+    notif_cancelacion: Boolean(config.notif_cancelacion),
   }
 }
 
@@ -657,10 +661,14 @@ async function saveMyMailConfig({ input, requesterIdUsuario, requesterRol }) {
   await medicosRepo.updateMedicoMailConfig({
     idMedico: Number(config.id_medico),
     enviarRecetasMail: Boolean(input?.enviar_recetas_mail),
+    notifTurnoNuevo: Boolean(input?.notif_turno_nuevo),
+    notifCancelacion: Boolean(input?.notif_cancelacion),
   })
 
   return {
     enviar_recetas_mail: Boolean(input?.enviar_recetas_mail),
+    notif_turno_nuevo: Boolean(input?.notif_turno_nuevo),
+    notif_cancelacion: Boolean(input?.notif_cancelacion),
   }
 }
 

@@ -201,6 +201,7 @@ async function findTurnosConfigByMedico(idMedico) {
             nombre,
             duracion_minutos,
             activo,
+            notificar_nuevo,
             creado_en,
             actualizado_en
      FROM medico_tipos_turno
@@ -228,19 +229,46 @@ async function upsertTurnosConfigByMedico({ idMedico, duracionTurnoEstandar, tip
       [idMedico, duracionTurnoEstandar]
     )
 
-    await conn.execute(
-      `UPDATE medico_tipos_turno
-       SET activo = 0
-       WHERE id_medico = ?`,
-      [idMedico]
-    )
+    // Actualiza por id los tipos existentes (preserva el id_tipo_turno, del que
+    // dependen los turnos ya agendados y su preferencia de notificación) e
+    // inserta los nuevos. Lo que no viene en la lista se desactiva.
+    const idsConservados = []
 
     for (const tipo of tiposTurno) {
+      let actualizado = false
+
+      if (tipo.idTipoTurno) {
+        const [result] = await conn.execute(
+          `UPDATE medico_tipos_turno
+           SET nombre = ?, duracion_minutos = ?, notificar_nuevo = ?, activo = 1
+           WHERE id_tipo_turno = ? AND id_medico = ?`,
+          [tipo.nombre, tipo.duracion, tipo.notificarNuevo ? 1 : 0, tipo.idTipoTurno, idMedico]
+        )
+        if (result.affectedRows > 0) {
+          idsConservados.push(Number(tipo.idTipoTurno))
+          actualizado = true
+        }
+      }
+
+      if (!actualizado) {
+        const [insertResult] = await conn.execute(
+          `INSERT INTO medico_tipos_turno (id_medico, nombre, duracion_minutos, notificar_nuevo, activo)
+           VALUES (?, ?, ?, ?, 1)`,
+          [idMedico, tipo.nombre, tipo.duracion, tipo.notificarNuevo ? 1 : 0]
+        )
+        idsConservados.push(insertResult.insertId)
+      }
+    }
+
+    if (idsConservados.length > 0) {
       await conn.execute(
-        `INSERT INTO medico_tipos_turno (id_medico, nombre, duracion_minutos, activo)
-         VALUES (?, ?, ?, 1)`,
-        [idMedico, tipo.nombre, tipo.duracion]
+        `UPDATE medico_tipos_turno
+         SET activo = 0
+         WHERE id_medico = ? AND id_tipo_turno NOT IN (${idsConservados.map(() => '?').join(',')})`,
+        [idMedico, ...idsConservados]
       )
+    } else {
+      await conn.execute(`UPDATE medico_tipos_turno SET activo = 0 WHERE id_medico = ?`, [idMedico])
     }
 
     await conn.commit()
@@ -340,7 +368,9 @@ async function findMedicoMailConfigByUserId(idUsuario) {
   const rows = await query(
     `SELECT
        m.id_medico,
-       COALESCE(m.enviar_recetas_mail, 1) AS enviar_recetas_mail
+       COALESCE(m.enviar_recetas_mail, 1) AS enviar_recetas_mail,
+       COALESCE(m.notif_turno_nuevo, 1) AS notif_turno_nuevo,
+       COALESCE(m.notif_cancelacion, 1) AS notif_cancelacion
      FROM medicos m
      WHERE m.id_usuario = :idUsuario
      LIMIT 1`,
@@ -349,14 +379,18 @@ async function findMedicoMailConfigByUserId(idUsuario) {
   return rows[0] || null
 }
 
-async function updateMedicoMailConfig({ idMedico, enviarRecetasMail }) {
+async function updateMedicoMailConfig({ idMedico, enviarRecetasMail, notifTurnoNuevo, notifCancelacion }) {
   await query(
     `UPDATE medicos
-     SET enviar_recetas_mail = :enviarRecetasMail
+     SET enviar_recetas_mail = :enviarRecetasMail,
+         notif_turno_nuevo = :notifTurnoNuevo,
+         notif_cancelacion = :notifCancelacion
      WHERE id_medico = :idMedico`,
     {
       idMedico,
       enviarRecetasMail: enviarRecetasMail ? 1 : 0,
+      notifTurnoNuevo: notifTurnoNuevo ? 1 : 0,
+      notifCancelacion: notifCancelacion ? 1 : 0,
     }
   )
 }

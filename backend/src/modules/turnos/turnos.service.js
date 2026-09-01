@@ -2,6 +2,7 @@ const HttpError = require('../../utils/httpError')
 const turnosRepo = require('./turnos.repository')
 const { assertMembershipNotExpiredByMedicoId } = require('../membresias/membresias.service')
 const { validateTextField } = require('../../utils/validators')
+const { sendTurnoNuevoEmail, sendTurnoCanceladoEmail } = require('../../utils/mailer')
 
 const ESTADOS_VALIDOS = new Set([
   'pendiente',
@@ -12,6 +13,29 @@ const ESTADOS_VALIDOS = new Set([
   'cancelado_clinica',
   'ausente',
 ])
+
+const ESTADOS_CANCELADOS = new Set(['cancelado_paciente', 'cancelado_clinica'])
+
+async function notificarCancelacion(idTurno, canceladoPor) {
+  try {
+    const resumen = await turnosRepo.findTurnoResumenById(idTurno)
+    if (!resumen) return
+
+    const medicoInfo = await turnosRepo.findMedicoNotifInfoById(Number(resumen.id_medico))
+    if (!medicoInfo?.email || !medicoInfo.notif_cancelacion) return
+
+    await sendTurnoCanceladoEmail({
+      to: medicoInfo.email,
+      medico: medicoInfo,
+      paciente: { nombre: resumen.paciente_nombre, apellido: resumen.paciente_apellido },
+      fecha: resumen.fecha,
+      hora: resumen.hora,
+      canceladoPor,
+    })
+  } catch (err) {
+    console.error('[turnos] no se pudo enviar el mail de cancelacion:', err.message)
+  }
+}
 
 async function crearTurno(input, authUser) {
   const required = ['id_clinica', 'fecha', 'hora']
@@ -54,11 +78,20 @@ async function crearTurno(input, authUser) {
   // Validar motivo_consulta si se proporciona
   const validatedMotivo = validateTextField(input.motivo_consulta, 500, 'El motivo de consulta', false)
 
+  let tipoTurnoInfo = null
+  if (input.id_tipo_turno) {
+    tipoTurnoInfo = await turnosRepo.findTipoTurnoById(Number(input.id_tipo_turno), idMedico)
+    if (!tipoTurnoInfo) {
+      throw new HttpError(400, 'Tipo de turno invalido')
+    }
+  }
+
   try {
     const idTurno = await turnosRepo.insertTurno({
       idPaciente,
       idMedico,
       idClinica: Number(input.id_clinica),
+      idTipoTurno: tipoTurnoInfo?.id_tipo_turno || null,
       idDisponibilidad: input.id_disponibilidad ? Number(input.id_disponibilidad) : null,
       fecha: input.fecha,
       hora: input.hora,
@@ -66,6 +99,27 @@ async function crearTurno(input, authUser) {
       duracionMinutos: input.duracion_minutos ? Number(input.duracion_minutos) : null,
       modificadoPor: authUser?.idUsuario || null,
     })
+
+    try {
+      const medicoInfo = await turnosRepo.findMedicoNotifInfoById(idMedico)
+      const debeNotificar = tipoTurnoInfo
+        ? Boolean(tipoTurnoInfo.notificar_nuevo)
+        : Boolean(medicoInfo?.notif_turno_nuevo)
+
+      if (medicoInfo?.email && debeNotificar) {
+        const resumen = await turnosRepo.findTurnoResumenById(idTurno)
+        await sendTurnoNuevoEmail({
+          to: medicoInfo.email,
+          medico: medicoInfo,
+          paciente: { nombre: resumen?.paciente_nombre, apellido: resumen?.paciente_apellido },
+          fecha: resumen?.fecha,
+          hora: resumen?.hora,
+          tipoNombre: tipoTurnoInfo?.nombre || null,
+        })
+      }
+    } catch (err) {
+      console.error('[turnos] no se pudo enviar el mail de turno nuevo:', err.message)
+    }
 
     return {
       id_turno: idTurno,
@@ -96,6 +150,10 @@ async function cambiarEstado(idTurno, estadoNuevo, authUser, motivo) {
 
   if (!updated) {
     throw new HttpError(404, 'Turno no encontrado')
+  }
+
+  if (ESTADOS_CANCELADOS.has(estadoNuevo)) {
+    await notificarCancelacion(Number(idTurno), 'la clínica')
   }
 
   return {
@@ -206,6 +264,8 @@ async function cancelarPorPaciente({ idTurno, motivo, requesterIdUsuario, reques
   if (!updated) {
     throw new HttpError(404, 'Turno no encontrado')
   }
+
+  await notificarCancelacion(Number(idTurno), 'el paciente')
 
   return {
     id_turno: updated.id_turno,

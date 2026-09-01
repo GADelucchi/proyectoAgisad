@@ -152,10 +152,48 @@ async function sendInvitacionMedicoEmail({ to, gerente, clinica, link }) {
   })
 }
 
+async function sendTurnoNuevoEmail({ to, medico, paciente, fecha, hora, tipoNombre }) {
+  await transporter.sendMail({
+    from: env.MAIL_FROM_TURNOS,
+    to,
+    subject: tipoNombre ? `Nuevo turno (${tipoNombre}) — Agisad` : 'Nuevo turno agendado — Agisad',
+    text: [
+      `Se agendó un nuevo turno con Dr./Dra. ${medico.nombre} ${medico.apellido}.`,
+      '',
+      `Paciente: ${paciente?.nombre || ''} ${paciente?.apellido || ''}`.trim(),
+      `Fecha: ${fecha}`,
+      `Hora: ${hora}`,
+      tipoNombre ? `Tipo de turno: ${tipoNombre}` : null,
+      '',
+      '— Agisad',
+    ].filter((line) => line !== null).join('\n'),
+  })
+}
+
+async function sendTurnoCanceladoEmail({ to, medico, paciente, fecha, hora, canceladoPor }) {
+  await transporter.sendMail({
+    from: env.MAIL_FROM_TURNOS,
+    to,
+    subject: 'Turno cancelado — Agisad',
+    text: [
+      `Se canceló un turno con Dr./Dra. ${medico.nombre} ${medico.apellido}.`,
+      '',
+      `Paciente: ${paciente?.nombre || ''} ${paciente?.apellido || ''}`.trim(),
+      `Fecha: ${fecha}`,
+      `Hora: ${hora}`,
+      canceladoPor ? `Cancelado por: ${canceladoPor}` : null,
+      '',
+      '— Agisad',
+    ].filter((line) => line !== null).join('\n'),
+  })
+}
+
 module.exports = {
   sendPasswordResetEmail,
   sendRecetaSolicitudEmail,
   sendPacienteMensajeEmail,
   sendInvitacionMedicoEmail,
   sendVerificacionEmailCodigo,
+  sendTurnoNuevoEmail,
+  sendTurnoCanceladoEmail,
 }

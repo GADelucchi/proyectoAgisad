@@ -81,16 +81,20 @@ function bloqueoFormBase(consultorios = []) {
 function turnoTipoFormBase() {
   return {
     id: `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    id_tipo_turno: null,
     nombre: '',
     duracion_minutos: '30',
+    notificar_nuevo: false,
   }
 }
 
 function mapTipoTurno(row, index) {
   return {
     id: row?.id_tipo_turno || `tipo-${index}`,
+    id_tipo_turno: row?.id_tipo_turno || null,
     nombre: row?.nombre || '',
     duracion_minutos: String(row?.duracion_minutos || 30),
+    notificar_nuevo: Boolean(row?.notificar_nuevo),
   }
 }
 
@@ -112,6 +116,8 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
   const [estadoCrud, setEstadoCrud] = useState('')
   const [guardandoClinica, setGuardandoClinica] = useState(false)
   const [enviarRecetasMail, setEnviarRecetasMail] = useState(true)
+  const [notifTurnoNuevo, setNotifTurnoNuevo] = useState(true)
+  const [notifCancelacion, setNotifCancelacion] = useState(true)
   const [estadoMailConfig, setEstadoMailConfig] = useState('')
 
   const [showClinicForm, setShowClinicForm] = useState(false)
@@ -142,6 +148,8 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
     setTiposTurno(tipos.length > 0 ? tipos : [turnoTipoFormBase()])
     setTerminos(tyc?.texto || '')
     setEnviarRecetasMail(mailConfig?.enviar_recetas_mail !== false)
+    setNotifTurnoNuevo(mailConfig?.notif_turno_nuevo !== false)
+    setNotifCancelacion(mailConfig?.notif_cancelacion !== false)
     setBloqueoForm((prev) => ({
       ...prev,
       id_clinica: prev.id_clinica || clinics[0]?.id || '',
@@ -157,6 +165,8 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
       setTiposTurno([turnoTipoFormBase()])
       setTerminos('')
       setEnviarRecetasMail(true)
+      setNotifTurnoNuevo(true)
+      setNotifCancelacion(true)
     })
   }, [doctorId, permiteAsistentes, permiteTurnos])
 
@@ -168,8 +178,12 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
     try {
       const saved = await medicosApi.saveMyMailConfig({
         enviar_recetas_mail: Boolean(enviarRecetasMail),
+        notif_turno_nuevo: Boolean(notifTurnoNuevo),
+        notif_cancelacion: Boolean(notifCancelacion),
       })
       setEnviarRecetasMail(saved?.enviar_recetas_mail !== false)
+      setNotifTurnoNuevo(saved?.notif_turno_nuevo !== false)
+      setNotifCancelacion(saved?.notif_cancelacion !== false)
       setEstadoMailConfig('Configuracion guardada correctamente.')
     } catch (err) {
       setEstadoMailConfig(err?.message || 'No se pudo guardar la configuracion.')
@@ -421,8 +435,10 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
   async function guardarTurnosConfig(confirmar = false) {
     const tiposLimpios = tiposTurno
       .map((tipo) => ({
+        id_tipo_turno: tipo.id_tipo_turno || null,
         nombre: tipo.nombre.trim(),
         duracion_minutos: Number(tipo.duracion_minutos),
+        notificar_nuevo: Boolean(tipo.notificar_nuevo),
       }))
       .filter((tipo) => tipo.nombre || tipo.duracion_minutos)
 
@@ -488,7 +504,7 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
       </section>
 
       <section className="config-section surface-raised">
-        <h3>Configuracion</h3>
+        <h3>Notificaciones</h3>
         <p className="config-section-sub">Preferencias de notificaciones del profesional.</p>
         <div className="config-asistente-row" style={{ marginBottom: 0 }}>
           <div>
@@ -506,6 +522,42 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
             {enviarRecetasMail ? 'Activado' : 'Desactivado'}
           </label>
         </div>
+        <div className="config-asistente-row" style={{ marginBottom: 0, marginTop: '0.6rem' }}>
+          <div>
+            <strong>Notificación de turno nuevo</strong>
+            <p style={{ margin: '2px 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+              Te avisa por mail cuando se agenda un turno común (sin un tipo específico).
+            </p>
+          </div>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.86rem' }}>
+            <input
+              type="checkbox"
+              checked={notifTurnoNuevo}
+              onChange={(e) => setNotifTurnoNuevo(e.target.checked)}
+            />
+            {notifTurnoNuevo ? 'Activado' : 'Desactivado'}
+          </label>
+        </div>
+        <div className="config-asistente-row" style={{ marginBottom: 0, marginTop: '0.6rem' }}>
+          <div>
+            <strong>Notificación de cancelación</strong>
+            <p style={{ margin: '2px 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+              Te avisa por mail cuando un turno se cancela, sin importar el tipo.
+            </p>
+          </div>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.86rem' }}>
+            <input
+              type="checkbox"
+              checked={notifCancelacion}
+              onChange={(e) => setNotifCancelacion(e.target.checked)}
+            />
+            {notifCancelacion ? 'Activado' : 'Desactivado'}
+          </label>
+        </div>
+        <p style={{ margin: '0.6rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+          Para notificaciones por tipo de turno específico (ej: "Primera vez"), configuralas en
+          cada tipo dentro de "Configuracion general de turnos" más abajo.
+        </p>
         <div style={{ marginTop: '0.7rem' }}>
           <Button size="sm" onClick={guardarMailConfig}>Guardar configuración</Button>
         </div>
@@ -694,6 +746,14 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
                   onChange={(e) => updateTipoTurno(tipo.id, 'duracion_minutos', e.target.value)}
                 />
               </div>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(tipo.notificar_nuevo)}
+                  onChange={(e) => updateTipoTurno(tipo.id, 'notificar_nuevo', e.target.checked)}
+                />
+                Notificarme
+              </label>
               <Button type="button" variant="danger" size="sm" onClick={() => removeTipoTurno(tipo.id)}>
                 <Trash2 size={12} /> Quitar
               </Button>
