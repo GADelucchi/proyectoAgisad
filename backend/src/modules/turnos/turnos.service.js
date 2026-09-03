@@ -1,5 +1,6 @@
 const HttpError = require('../../utils/httpError')
 const turnosRepo = require('./turnos.repository')
+const medicosRepo = require('../medicos/medicos.repository')
 const { assertMembershipNotExpiredByMedicoId } = require('../membresias/membresias.service')
 const { validateTextField } = require('../../utils/validators')
 const { sendTurnoNuevoEmail, sendTurnoCanceladoEmail } = require('../../utils/mailer')
@@ -74,6 +75,22 @@ async function crearTurno(input, authUser) {
 
   // Validar que el médico tenga membresía activa
   await assertMembershipNotExpiredByMedicoId(idMedico, 'No es posible agendar turnos')
+
+  // En un consultorio alquilado, además del médico tiene que estar al día el
+  // dueño del espacio: si se le venció la membresía o dio de baja el adicional,
+  // no se toman reservas nuevas (las ya agendadas no se tocan).
+  const clinicaCompartida = await medicosRepo.findClinicaCompartida(Number(input.id_clinica))
+  if (clinicaCompartida?.compartido) {
+    const { isConsultorioOperativo } = require('../consultorios/consultorios.repository')
+    const operativo = await isConsultorioOperativo(Number(input.id_clinica))
+    if (!operativo) {
+      throw new HttpError(
+        403,
+        'El consultorio no está disponible en este momento. Consultá con quien lo administra.',
+        { code: 'CONSULTORIO_NO_OPERATIVO' }
+      )
+    }
+  }
 
   // Validar motivo_consulta si se proporciona
   const validatedMotivo = validateTextField(input.motivo_consulta, 500, 'El motivo de consulta', false)

@@ -76,16 +76,63 @@ async function listClinicasByPropietario(idPropietario) {
   )
 }
 
+// Un consultorio deja de ofrecerse si al dueño se le venció la membresía (o,
+// si el dueño es un médico, si dio de baja el adicional): sería ofrecer un
+// espacio que el sistema ya no puede sostener.
+const OWNER_JOIN = `
+  LEFT JOIN propietario_clinicas pc ON pc.id_clinica = c.id_clinica AND pc.activo = 1
+  LEFT JOIN propietarios pr ON pr.id_propietario = pc.id_propietario
+  LEFT JOIN medico_clinicas mc ON mc.id_clinica = c.id_clinica AND mc.activo = 1 AND mc.es_propietario = 1
+  LEFT JOIN medicos m ON m.id_medico = mc.id_medico
+  LEFT JOIN membresias ms ON ms.id_membresia = (
+    SELECT MAX(id_membresia) FROM membresias
+    WHERE id_usuario = COALESCE(pr.id_usuario, m.id_usuario)
+  )`
+
+const OWNER_OPERATIVO = `
+  ms.estado = 'activa'
+  AND (
+    (ms.es_trial = 1 AND (ms.fecha_fin_trial IS NULL OR ms.fecha_fin_trial >= CURDATE()))
+    OR (ms.es_trial = 0 AND (ms.pagado_hasta IS NULL OR ms.pagado_hasta >= CURDATE()))
+  )
+  AND (
+    pr.id_propietario IS NOT NULL
+    OR EXISTS (
+      SELECT 1 FROM medico_adicional_consultorios ac
+      WHERE ac.id_medico = m.id_medico AND ac.estado = 'activo'
+    )
+  )`
+
 async function listConsultoriosPublicos() {
   return query(
     `SELECT c.id_clinica, c.nombre, c.direccion, c.telefono,
             ci.nombre AS ciudad
      FROM clinicas c
      LEFT JOIN ciudades ci ON ci.id_ciudad = c.id_ciudad
+     ${OWNER_JOIN}
      WHERE c.compartido = 1
        AND c.activo = 1
+       AND ${OWNER_OPERATIVO}
      ORDER BY c.nombre`
   )
+}
+
+/**
+ * ¿El consultorio está operativo? (dueño con membresía vigente y, si es
+ * médico, con el adicional activo). Se usa para frenar reservas nuevas.
+ */
+async function isConsultorioOperativo(idClinica) {
+  const rows = await query(
+    `SELECT 1 AS ok
+     FROM clinicas c
+     ${OWNER_JOIN}
+     WHERE c.id_clinica = :idClinica
+       AND c.activo = 1
+       AND ${OWNER_OPERATIVO}
+     LIMIT 1`,
+    { idClinica }
+  )
+  return Boolean(rows[0])
 }
 
 async function createClinicaForPropietario({ idPropietario, nombre, idCiudad, direccion, telefono }) {
@@ -428,10 +475,11 @@ async function findAdicionalByMedico(idMedico) {
   return rows[0] || null
 }
 
-async function createAdicional({ idMedico, montoMensual, maxConsultorios }) {
+async function createAdicionalActivo({ idMedico, montoMensual, maxConsultorios }) {
   const result = await query(
-    `INSERT INTO medico_adicional_consultorios (id_medico, monto_mensual, max_consultorios)
-     VALUES (:idMedico, :montoMensual, :maxConsultorios)`,
+    `INSERT INTO medico_adicional_consultorios
+       (id_medico, monto_mensual, max_consultorios, estado, activado_en)
+     VALUES (:idMedico, :montoMensual, :maxConsultorios, 'activo', NOW())`,
     { idMedico, montoMensual, maxConsultorios }
   )
   return result.insertId
@@ -487,7 +535,8 @@ module.exports = {
   findOwnerEmailByClinica,
   listClinicasCompartidasByMedicoDueno,
   findAdicionalByMedico,
-  createAdicional,
+  createAdicionalActivo,
   cancelarAdicional,
   contarPublicadosByMedico,
+  isConsultorioOperativo,
 }

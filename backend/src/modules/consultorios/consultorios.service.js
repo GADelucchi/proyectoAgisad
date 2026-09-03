@@ -1,7 +1,7 @@
 const HttpError = require('../../utils/httpError')
 const repo = require('./consultorios.repository')
 const turnosRepo = require('../turnos/turnos.repository')
-const { assertMedicoFeatureByMedicoId } = require('../membresias/membresias.service')
+const { assertMedicoFeatureByMedicoId, assertOwnMembershipActive } = require('../membresias/membresias.service')
 const { validateTextField } = require('../../utils/validators')
 const { sendSolicitudConsultorioEmail, sendSolicitudResueltaEmail } = require('../../utils/mailer')
 
@@ -143,15 +143,16 @@ async function publicarConsultorio({ idClinica, publicar, requesterIdUsuario, re
   if (!owns) throw new HttpError(403, 'El consultorio no te pertenece')
 
   if (publicar) {
-    const adicional = await repo.findAdicionalByMedico(medico.id_medico)
+    // Publicar implica ofrecerle el espacio a terceros: exige membresía propia
+    // vigente, no alcanza con estar cubierto por un gerente.
+    await assertOwnMembershipActive(requesterIdUsuario, 'Publicar un consultorio para alquiler')
 
+    const adicional = await repo.findAdicionalByMedico(medico.id_medico)
     if (adicional?.estado !== 'activo') {
       throw new HttpError(
         402,
-        adicional?.estado === 'pendiente'
-          ? 'Tu solicitud del adicional está pendiente de activación'
-          : 'Necesitás contratar el adicional para publicar consultorios',
-        { code: adicional?.estado === 'pendiente' ? 'ADICIONAL_PENDIENTE' : 'ADICIONAL_REQUERIDO' }
+        'Necesitás contratar el adicional para publicar consultorios',
+        { code: 'ADICIONAL_REQUERIDO' }
       )
     }
 
@@ -493,11 +494,11 @@ async function solicitarAdicional({ requesterIdUsuario, requesterRol }) {
   if (existente?.estado === 'activo') {
     throw new HttpError(409, 'Ya tenés el adicional activo')
   }
-  if (existente?.estado === 'pendiente') {
-    throw new HttpError(409, 'Ya tenés una solicitud pendiente de activación')
-  }
 
-  const idAdicional = await repo.createAdicional({
+  // Se activa en el acto: el médico ya aceptó el cargo, y el cobro se hace en
+  // la próxima renovación (igual que el trial de 30 días del alta). El monto
+  // queda sumado al total que ve el admin al validar el pago.
+  const idAdicional = await repo.createAdicionalActivo({
     idMedico: medico.id_medico,
     montoMensual: ADICIONAL_MONTO,
     maxConsultorios: ADICIONAL_MAX_CONSULTORIOS,
@@ -505,7 +506,7 @@ async function solicitarAdicional({ requesterIdUsuario, requesterRol }) {
 
   return {
     id_adicional: idAdicional,
-    estado: 'pendiente',
+    estado: 'activo',
     monto_mensual: ADICIONAL_MONTO,
     max_consultorios: ADICIONAL_MAX_CONSULTORIOS,
   }

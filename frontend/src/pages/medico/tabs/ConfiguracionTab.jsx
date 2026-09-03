@@ -362,12 +362,23 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
   }
 
   async function solicitarAdicional() {
+    const monto = Number(adicional?.monto_mensual || 0).toLocaleString('es-AR')
+    const tope = adicional?.max_consultorios ?? 2
+    const ok = window.confirm(
+      `Vas a activar el adicional para publicar consultorios.\n\n` +
+      `· AR$ ${monto} por mes, que se suman a tu membresía desde la próxima renovación.\n` +
+      `· Podés publicar hasta ${tope} consultorios.\n` +
+      `· Podés darlo de baja cuando quieras: al hacerlo se despublican tus consultorios.\n\n` +
+      `¿Confirmás?`
+    )
+    if (!ok) return
+
     try {
       await consultoriosApi.solicitarAdicional()
       setAdicional(await consultoriosApi.getAdicional().catch(() => null))
-      setEstadoCrud('Solicitud enviada. Vas a poder publicar en cuanto se acredite el pago.')
+      setEstadoCrud(`Adicional activado. Ya podés publicar hasta ${tope} consultorios.`)
     } catch (err) {
-      setEstadoCrud(err?.message || 'No se pudo solicitar el adicional.')
+      setEstadoCrud(err?.message || 'No se pudo activar el adicional.')
     }
   }
 
@@ -644,11 +655,6 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
                 {' '}{adicional.publicados} de {adicional.max_consultorios} consultorios publicados
               </p>
             )}
-            {adicional?.plan_habilita && adicional?.estado === 'pendiente' && (
-              <p style={{ margin: '2px 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                Solicitado el {adicional.solicitado_en}. Se habilita cuando se acredite el pago.
-              </p>
-            )}
             {adicional?.plan_habilita && !adicional?.estado && (
               <p style={{ margin: '2px 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
                 AR$ {Number(adicional.monto_mensual).toLocaleString('es-AR')} por mes, se suma a tu membresía.
@@ -661,10 +667,7 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
             <Button size="sm" variant="secondary" onClick={solicitarCambioMembresia}>Cambiar plan</Button>
           )}
           {adicional?.plan_habilita && !adicional?.estado && (
-            <Button size="sm" onClick={solicitarAdicional}>Contratar adicional</Button>
-          )}
-          {adicional?.estado === 'pendiente' && (
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Pendiente de activación</span>
+            <Button size="sm" onClick={solicitarAdicional}>Activar adicional</Button>
           )}
           {adicional?.estado === 'activo' && (
             <Button size="sm" variant="ghost" onClick={darDeBajaAdicional}>Dar de baja</Button>

@@ -1,6 +1,63 @@
 const nodemailer = require('nodemailer')
 const env = require('../config/env')
 
+const RESEND_API_URL = 'https://api.resend.com/emails'
+const ENVIO_TIMEOUT_MS = 15000
+
+function esApiKeyResend(value) {
+  return typeof value === 'string' && value.startsWith('re_')
+}
+
+/**
+ * Envía por la API HTTP de Resend en vez de SMTP.
+ *
+ * Render (y varios PaaS) bloquean los puertos SMTP salientes (465/587), así que
+ * conectarse a smtp.resend.com desde ahí termina siempre en ETIMEDOUT. La API va
+ * por HTTPS, que nunca está bloqueado. Se usa la misma API key que el SMTP.
+ */
+function createResendHttpTransporter() {
+  return {
+    sendMail: async ({ from, to, subject, text, html }) => {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), ENVIO_TIMEOUT_MS)
+
+      try {
+        const res = await fetch(RESEND_API_URL, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${env.MAIL_PASSWORD}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from,
+            to: Array.isArray(to) ? to : [to],
+            subject,
+            ...(text ? { text } : {}),
+            ...(html ? { html } : {}),
+          }),
+          signal: controller.signal,
+        })
+
+        const payload = await res.json().catch(() => ({}))
+
+        if (!res.ok) {
+          const detalle = payload?.message || payload?.name || `HTTP ${res.status}`
+          throw new Error(`Resend rechazó el envío: ${detalle}`)
+        }
+
+        return { messageId: payload?.id || 'resend-api' }
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          throw new Error(`Timeout al contactar la API de Resend (${ENVIO_TIMEOUT_MS}ms)`)
+        }
+        throw err
+      } finally {
+        clearTimeout(timeout)
+      }
+    },
+  }
+}
+
 /**
  * Crea el transporter según el entorno.
  * En desarrollo (o sin MAIL_HOST) simula el envío por consola.
@@ -18,6 +75,10 @@ function createTransporter() {
         return { messageId: 'dev-simulated' }
       },
     }
+  }
+
+  if (esApiKeyResend(env.MAIL_PASSWORD)) {
+    return createResendHttpTransporter()
   }
 
   return nodemailer.createTransport({

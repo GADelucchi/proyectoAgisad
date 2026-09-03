@@ -118,11 +118,14 @@ export default function PanelAdminPage() {
   }, [selectedId])
 
   useEffect(() => {
+    // Precarga el monto con plan + adicionales para que no haya que sumarlo a mano.
+    const total = Number(detalle?.suscripcion?.total_a_cobrar || 0)
     setReactivateForm((prev) => ({
       ...prev,
       plan: String(detalle?.suscripcion?.plan || '').toLowerCase(),
+      monto: total > 0 ? String(total) : '',
     }))
-  }, [detalle?.suscripcion?.plan])
+  }, [detalle?.suscripcion?.plan, detalle?.suscripcion?.total_a_cobrar])
 
   useEffect(() => {
     if (tab === 'finanzas') {
@@ -277,6 +280,22 @@ export default function PanelAdminPage() {
                   <KeyValue label="Monto mensual" value={detalle.suscripcion.monto_mensual ? formatMoney(detalle.suscripcion.monto_mensual) : '—'} />
                 </div>
 
+                {(detalle.suscripcion.adicionales?.length > 0) && (
+                  <div className="surface" style={{ padding: '0.85rem', marginTop: '0.6rem' }}>
+                    <h4 style={{ marginTop: 0, marginBottom: '0.5rem' }}>Adicionales contratados</h4>
+                    {detalle.suscripcion.adicionales.map((a, i) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem', marginBottom: '0.3rem' }}>
+                        <span>{a.concepto} <span style={{ color: 'var(--text-muted)' }}>· desde {a.activado_en}</span></span>
+                        <strong>{formatMoney(a.monto_mensual)}</strong>
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', marginTop: '0.5rem', paddingTop: '0.5rem' }}>
+                      <strong>Total a cobrar por mes</strong>
+                      <strong>{formatMoney(detalle.suscripcion.total_a_cobrar)}</strong>
+                    </div>
+                  </div>
+                )}
+
                 {['medico', 'gerente'].includes(detalle.usuario.rol) && (
                   <div className="surface" style={{ padding: '1rem', marginTop: '0.75rem' }}>
                     <h4 style={{ marginTop: 0, marginBottom: '0.65rem' }}>Validar pago y reactivar membresía</h4>
@@ -310,7 +329,7 @@ export default function PanelAdminPage() {
                       </div>
 
                       <div className="form-group">
-                        <label className="form-label" htmlFor="reactivarMonto">Monto (opcional)</label>
+                        <label className="form-label" htmlFor="reactivarMonto">Monto a cobrar (plan + adicionales)</label>
                         <input
                           id="reactivarMonto"
                           className="form-input"

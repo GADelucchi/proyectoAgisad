@@ -46,6 +46,23 @@ async function getUsuarioDetalle(idUsuarioRaw) {
     pagos: [],
   }
 
+  // El monto a cobrar no es solo el del plan: los adicionales contratados se
+  // suman al total de la próxima renovación.
+  const adicionales = base.rol === 'medico'
+    ? await adminRepository.findAdicionalesActivosByMedicoUsuario(idUsuario)
+    : []
+
+  const montoPlan = Number(base.monto_mensual || 0)
+  const montoAdicionales = adicionales.reduce((acc, a) => acc + Number(a.monto_mensual || 0), 0)
+
+  detalle.suscripcion.adicionales = adicionales.map((a) => ({
+    concepto: `Publicar consultorios (hasta ${a.max_consultorios})`,
+    monto_mensual: Number(a.monto_mensual),
+    activado_en: a.activado_en,
+  }))
+  detalle.suscripcion.monto_adicionales = montoAdicionales
+  detalle.suscripcion.total_a_cobrar = montoPlan + montoAdicionales
+
   if (base.rol === 'paciente') {
     detalle.perfil = {
       id_paciente: base.id_paciente,
@@ -168,27 +185,7 @@ async function reactivateMembership(input) {
   }
 }
 
-async function listAdicionalesConsultorio(estado) {
-  const filtro = estado ? String(estado) : null
-  return adminRepository.listAdicionalesConsultorio(filtro)
-}
 
-async function resolverAdicionalConsultorio({ idAdicional, aprobar, idUsuarioAdmin }) {
-  const id = toNumber(idAdicional)
-  if (!id) {
-    throw new HttpError(400, 'id_adicional invalido')
-  }
-
-  const ok = aprobar
-    ? await adminRepository.activarAdicionalConsultorio({ idAdicional: id, idUsuarioAdmin })
-    : await adminRepository.rechazarAdicionalConsultorio(id)
-
-  if (!ok) {
-    throw new HttpError(404, 'Adicional no encontrado o ya resuelto')
-  }
-
-  return { id_adicional: id, estado: aprobar ? 'activo' : 'rechazado' }
-}
 
 module.exports = {
   listUsuarios,
@@ -196,6 +193,4 @@ module.exports = {
   getFinanzas,
   getUserSubscription,
   reactivateMembership,
-  listAdicionalesConsultorio,
-  resolverAdicionalConsultorio,
 }
