@@ -37,11 +37,11 @@ async function listClinicasByGerente(idGerente) {
   )
 }
 
-async function createInvitacion({ idGerente, idClinica, email, tokenHash, expiraEn }) {
+async function createInvitacion({ idGerente, idClinica, email, tokenHash, vigenciaDias }) {
   const result = await query(
     `INSERT INTO gerente_invitaciones (id_gerente, id_clinica, email_invitado, token_hash, expira_en)
-     VALUES (:idGerente, :idClinica, :email, :tokenHash, :expiraEn)`,
-    { idGerente, idClinica, email, tokenHash, expiraEn }
+     VALUES (:idGerente, :idClinica, :email, :tokenHash, DATE_ADD(NOW(), INTERVAL :vigenciaDias DAY))`,
+    { idGerente, idClinica, email, tokenHash, vigenciaDias }
   )
   return result.insertId
 }
@@ -51,6 +51,7 @@ async function findInvitacionByTokenHash(tokenHash) {
     `SELECT
       gi.id_invitacion, gi.id_gerente, gi.id_clinica, gi.email_invitado,
       gi.estado, gi.expira_en, gi.id_medico_resultante,
+      (gi.expira_en > NOW()) AS vigente,
       c.nombre AS clinica_nombre,
       g.nombre AS gerente_nombre, g.apellido AS gerente_apellido
      FROM gerente_invitaciones gi

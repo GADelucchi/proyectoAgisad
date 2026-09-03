@@ -2,12 +2,16 @@ const { query } = require('../../db/query')
 
 /**
  * Guarda un nuevo token (ya hasheado) para el usuario.
+ *
+ * El vencimiento lo calcula MySQL, no JS: como `findValidToken` compara contra
+ * NOW(), mezclar el reloj de Node con el de la base hacía que el token naciera
+ * vencido si ambos no estaban en la misma zona horaria.
  */
-async function createToken(idUsuario, tokenHash, expiresAt) {
+async function createToken(idUsuario, tokenHash, vigenciaMinutos) {
   await query(
     `INSERT INTO password_reset_tokens (id_usuario, token_hash, expira_en)
-     VALUES (:idUsuario, :tokenHash, :expiresAt)`,
-    { idUsuario, tokenHash, expiresAt }
+     VALUES (:idUsuario, :tokenHash, DATE_ADD(NOW(), INTERVAL :vigenciaMinutos MINUTE))`,
+    { idUsuario, tokenHash, vigenciaMinutos }
   )
 }
 

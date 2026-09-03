@@ -1,20 +1,27 @@
 const { query } = require('../../db/query')
 
-async function createCodigo({ idUsuario, codigoHash, expiraEn }) {
+// El vencimiento se calcula y se compara SIEMPRE con el reloj de MySQL.
+// Mandar un Date de JS acá rompía en producción: mysql2 lo serializa con la
+// zona del pool (-03:00) mientras que NOW() usa la del servidor de la base
+// (UTC en la mayoría de las bases administradas), así que el código nacía
+// vencido por la diferencia horaria.
+async function createCodigo({ idUsuario, codigoHash, vigenciaMinutos }) {
   await query(
     `INSERT INTO email_verificaciones (id_usuario, codigo_hash, expira_en)
-     VALUES (:idUsuario, :codigoHash, :expiraEn)`,
-    { idUsuario, codigoHash, expiraEn }
+     VALUES (:idUsuario, :codigoHash, DATE_ADD(NOW(), INTERVAL :vigenciaMinutos MINUTE))`,
+    { idUsuario, codigoHash, vigenciaMinutos }
   )
 }
 
 /**
  * Último código no usado y no vencido de un usuario (haya expirado o no
  * el intento de matcheo, esto solo trae el registro más reciente).
+ * `antiguedad_seg` viene calculado por la base para el cooldown de reenvío.
  */
 async function findVigente(idUsuario) {
   const rows = await query(
-    `SELECT id_verificacion, codigo_hash, intentos, expira_en, creado_en
+    `SELECT id_verificacion, codigo_hash, intentos, expira_en, creado_en,
+            TIMESTAMPDIFF(SECOND, creado_en, NOW()) AS antiguedad_seg
      FROM email_verificaciones
      WHERE id_usuario  = :idUsuario
        AND usado_en    IS NULL

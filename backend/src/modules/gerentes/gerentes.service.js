@@ -6,7 +6,7 @@ const repo = require('./gerentes.repository')
 const { sendInvitacionMedicoEmail } = require('../../utils/mailer')
 const authService = require('../auth/auth.service')
 
-const INVITACION_VIGENCIA_MS = 7 * 24 * 60 * 60 * 1000 // 7 días
+const INVITACION_VIGENCIA_DIAS = 7
 
 function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex')
@@ -43,14 +43,13 @@ async function crearInvitacion({ idClinica, email, requesterIdUsuario, requester
 
   const token = crypto.randomBytes(32).toString('hex')
   const tokenHash = sha256(token)
-  const expiraEn = new Date(Date.now() + INVITACION_VIGENCIA_MS)
 
   await repo.createInvitacion({
     idGerente: gerente.id_gerente,
     idClinica: clinica.id_clinica,
     email: emailNormalizado,
     tokenHash,
-    expiraEn,
+    vigenciaDias: INVITACION_VIGENCIA_DIAS,
   })
 
   const link = `${env.FRONTEND_URL}/invitacion/${token}`
@@ -110,7 +109,7 @@ async function resolveInvitacionVigente(token) {
   if (invitacion.estado !== 'pendiente') {
     throw new HttpError(410, 'Esta invitación ya fue utilizada o fue revocada')
   }
-  if (new Date(invitacion.expira_en) < new Date()) {
+  if (!invitacion.vigente) {
     throw new HttpError(410, 'Esta invitación expiró')
   }
 

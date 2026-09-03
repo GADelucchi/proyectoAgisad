@@ -12,8 +12,8 @@ const {
   invalidarPendientes,
 } = require('./email-verification.repository')
 
-const CODIGO_VIGENCIA_MS = 15 * 60 * 1000 // 15 minutos
-const REENVIO_COOLDOWN_MS = 45 * 1000 // 45 segundos
+const CODIGO_VIGENCIA_MINUTOS = 15
+const REENVIO_COOLDOWN_SEG = 45
 const MAX_INTENTOS = 5
 
 function sha256(value) {
@@ -37,9 +37,8 @@ async function emitirCodigo(idUsuario, email) {
 
   const codigo = generarCodigo()
   const codigoHash = sha256(codigo)
-  const expiraEn = new Date(Date.now() + CODIGO_VIGENCIA_MS)
 
-  await createCodigo({ idUsuario, codigoHash, expiraEn })
+  await createCodigo({ idUsuario, codigoHash, vigenciaMinutos: CODIGO_VIGENCIA_MINUTOS })
   await sendVerificacionEmailCodigo({ to: email, codigo })
 }
 
@@ -56,9 +55,11 @@ async function solicitarReenvio(email) {
 
   const vigente = await findVigente(user.id_usuario)
   if (vigente) {
-    const antiguedadMs = Date.now() - new Date(vigente.creado_en).getTime()
-    if (antiguedadMs < REENVIO_COOLDOWN_MS) {
-      const esperaSeg = Math.ceil((REENVIO_COOLDOWN_MS - antiguedadMs) / 1000)
+    // La antigüedad la calcula la base (TIMESTAMPDIFF): compararla en JS
+    // arrastraba el mismo desfasaje horario que rompía la expiración.
+    const antiguedadSeg = Number(vigente.antiguedad_seg)
+    if (Number.isFinite(antiguedadSeg) && antiguedadSeg < REENVIO_COOLDOWN_SEG) {
+      const esperaSeg = REENVIO_COOLDOWN_SEG - antiguedadSeg
       throw new HttpError(429, `Esperá ${esperaSeg} segundos antes de pedir otro código.`)
     }
   }

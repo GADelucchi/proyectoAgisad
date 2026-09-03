@@ -9,6 +9,8 @@ const {
   invalidateUserTokens,
 } = require('./password-reset.repository')
 
+const TOKEN_VIGENCIA_MINUTOS = 60
+
 function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex')
 }
@@ -42,9 +44,8 @@ async function requestPasswordReset(email) {
 
   const token = crypto.randomBytes(32).toString('hex')
   const tokenHash = sha256(token)
-  const expiresAt = new Date(Date.now() + 60 * 60 * 1000) // +1 hora
 
-  await createToken(user.id_usuario, tokenHash, expiresAt)
+  await createToken(user.id_usuario, tokenHash, TOKEN_VIGENCIA_MINUTOS)
   await sendPasswordResetEmail({ to: email, token })
 }
 
