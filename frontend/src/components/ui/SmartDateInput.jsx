@@ -5,7 +5,7 @@ import {
   isoDateFromDisplay,
 } from '../../utils/smartDateInput'
 
-export default function SmartDateInput({ value, onChange, className = 'form-input', id, name, placeholder = 'DD/MM/AAAA' }) {
+export default function SmartDateInput({ value, onChange, className = 'form-input', id, name, placeholder = 'DD/MM/AAAA', readOnly = false }) {
   const [isTouchDevice, setIsTouchDevice] = useState(false)
   const [draftValue, setDraftValue] = useState('')
   const displayValue = useMemo(() => displayDateFromIso(value), [value])
@@ -31,6 +31,7 @@ export default function SmartDateInput({ value, onChange, className = 'form-inpu
         className={className}
         value={value}
         onChange={onChange}
+        readOnly={readOnly}
       />
     )
   }
@@ -43,6 +44,7 @@ export default function SmartDateInput({ value, onChange, className = 'form-inpu
       className={className}
       inputMode="numeric"
       placeholder={placeholder}
+      readOnly={readOnly}
       value={draftValue}
       onChange={e => {
         const formatted = formatDateDisplay(e.target.value)

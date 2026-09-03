@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Search, RefreshCw, CalendarPlus, UserPlus, History, Pencil } from 'lucide-react'
 import Button from '../../../components/ui/Button'
+import SmartDateInput from '../../../components/ui/SmartDateInput'
 import { useAuth } from '../../../context/AuthContext'
 import { medicosApi } from '../../../services/medicos.api'
 import { pacientesApi } from '../../../services/pacientes.api'
@@ -409,11 +410,9 @@ export default function PacientesTab() {
 
             <div className="form-group" style={{ margin: 0 }}>
               <label className="form-label" htmlFor="alta-nacimiento">Fecha de nacimiento (opcional)</label>
-              <input
+              <SmartDateInput
                 id="alta-nacimiento"
-                type="date"
-                className="form-input"
-                max={toIsoDate(new Date())}
+                name="fecha_nac"
                 value={formAlta.fecha_nac}
                 onChange={(e) => setFormAlta({ ...formAlta, fecha_nac: e.target.value })}
                 readOnly={pacienteExistente}
@@ -596,11 +595,9 @@ export default function PacientesTab() {
 
             <div className="form-group" style={{ margin: 0 }}>
               <label className="form-label" htmlFor="editar-nacimiento">Fecha de nacimiento</label>
-              <input
+              <SmartDateInput
                 id="editar-nacimiento"
-                type="date"
-                className="form-input"
-                max={toIsoDate(new Date())}
+                name="fecha_nac"
                 value={formEditar.fecha_nac}
                 onChange={(e) => setFormEditar({ ...formEditar, fecha_nac: e.target.value })}
               />

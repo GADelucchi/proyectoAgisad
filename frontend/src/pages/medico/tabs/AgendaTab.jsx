@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarDays, UserPlus } from 'lucide-react'
 import { useAuth } from '../../../context/AuthContext'
 import { medicosApi } from '../../../services/medicos.api'
 import { pacientesApi } from '../../../services/pacientes.api'
+import SmartDateInput from '../../../components/ui/SmartDateInput'
 import { turnosApi } from '../../../services/turnos.api'
 import { formatDateDdMmYyyy, formatTime24h } from '../../../utils/dateFormat'
 import './AgendaTab.css'
@@ -107,6 +108,19 @@ function claseEstadoTurno(estado) {
   return ''
 }
 
+const FORM_ALTA_VACIO = {
+  dni: '',
+  nombre: '',
+  apellido: '',
+  email: '',
+  telefono: '',
+  fecha_nac: '',
+}
+
+function nombrePaciente(p) {
+  return `${p?.apellido || ''} ${p?.nombre || ''}`.trim() || 'Paciente'
+}
+
 function ocupaSlot(estado) {
   return estado !== 'cancelado_clinica' && estado !== 'cancelado_paciente'
 }
@@ -122,10 +136,17 @@ export default function AgendaTab({ doctorId, readOnly = false, onResumenDia }) 
   const [mensajeAccion, setMensajeAccion] = useState('')
   const [slotAgendando, setSlotAgendando] = useState(null)
   const [pacientes, setPacientes] = useState([])
-  const [formTurno, setFormTurno] = useState({ id_paciente: '', motivo: '' })
+  const [formTurno, setFormTurno] = useState({ id_paciente: '', motivo: '', id_tipo_turno: '' })
+  const [busquedaPaciente, setBusquedaPaciente] = useState('')
+  const [tiposTurno, setTiposTurno] = useState([])
   const [guardandoTurno, setGuardandoTurno] = useState(false)
   const [recargarTurnos, setRecargarTurnos] = useState(0)
   const [duracionEstandar, setDuracionEstandar] = useState(30)
+  const [editandoFecha, setEditandoFecha] = useState(false)
+  const [altaPaciente, setAltaPaciente] = useState(null)
+  const [formAlta, setFormAlta] = useState(FORM_ALTA_VACIO)
+  const [guardandoAlta, setGuardandoAlta] = useState(false)
+  const [mensajeAlta, setMensajeAlta] = useState('')
 
   useEffect(() => {
     if (!ownerDoctorId && !isSelfMedico) return
@@ -202,8 +223,10 @@ export default function AgendaTab({ doctorId, readOnly = false, onResumenDia }) 
 
     request
       .then((config) => {
+        if (cancelled) return
         const valor = Number(config?.duracion_turno_estandar)
-        if (!cancelled && Number.isFinite(valor) && valor > 0) setDuracionEstandar(valor)
+        if (Number.isFinite(valor) && valor > 0) setDuracionEstandar(valor)
+        setTiposTurno(Array.isArray(config?.tipos_turno) ? config.tipos_turno : [])
       })
       .catch(() => {})
 
@@ -218,6 +241,30 @@ export default function AgendaTab({ doctorId, readOnly = false, onResumenDia }) 
     setFecha(d)
     setSlotAgendando(null)
   }
+
+  /** Salta a una fecha concreta (YYYY-MM-DD) escrita a mano o elegida del calendario. */
+  function irAFecha(iso) {
+    if (!iso) return
+    const [y, m, d] = iso.split('-').map(Number)
+    if (!y || !m || !d) return
+    const destino = new Date(y, m - 1, d)
+    if (Number.isNaN(destino.getTime())) return
+    setFecha(destino)
+    setSlotAgendando(null)
+  }
+
+  const pacienteSeleccionado = useMemo(
+    () => pacientes.find((p) => String(p.id_paciente) === String(formTurno.id_paciente)) || null,
+    [pacientes, formTurno.id_paciente]
+  )
+
+  const pacientesFiltrados = useMemo(() => {
+    const q = busquedaPaciente.trim().toLowerCase()
+    if (!q) return []
+    return pacientes
+      .filter((p) => `${p.nombre || ''} ${p.apellido || ''} ${p.dni || ''}`.toLowerCase().includes(q))
+      .slice(0, 8)
+  }, [pacientes, busquedaPaciente])
 
   const fechaLabel = formatDateDdMmYyyy(fecha)
   const slotsByClinica = useMemo(() => {
@@ -317,7 +364,8 @@ export default function AgendaTab({ doctorId, readOnly = false, onResumenDia }) 
 
   async function abrirAgendar({ idClinica, fechaIso, hora, duracion }) {
     setMensajeAccion('')
-    setFormTurno({ id_paciente: '', motivo: '' })
+    setFormTurno({ id_paciente: '', motivo: '', id_tipo_turno: '' })
+    setBusquedaPaciente('')
     setSlotAgendando({ idClinica, fechaIso, hora: horaKey(hora), duracion: duracion || 30 })
 
     if (pacientes.length > 0) return
@@ -338,14 +386,22 @@ export default function AgendaTab({ doctorId, readOnly = false, onResumenDia }) 
     setGuardandoTurno(true)
     setMensajeAccion('')
     try {
+      // Si se eligió un tipo de turno, su duración manda sobre la del slot:
+      // una "Primera vez" de 60 min ocupa dos slots de 30.
+      const tipo = tiposTurno.find((t) => String(t.id_tipo_turno) === String(formTurno.id_tipo_turno))
+      const duracion = Number(tipo?.duracion_minutos) > 0
+        ? Number(tipo.duracion_minutos)
+        : slotAgendando.duracion
+
       await turnosApi.crear({
         id_medico: ownerDoctorId || undefined,
         id_paciente: Number(formTurno.id_paciente),
         id_clinica: Number(slotAgendando.idClinica),
         fecha: slotAgendando.fechaIso,
         hora: `${slotAgendando.hora}:00`,
-        duracion_minutos: slotAgendando.duracion,
-        motivo_consulta: formTurno.motivo || null,
+        duracion_minutos: duracion,
+        id_tipo_turno: formTurno.id_tipo_turno ? Number(formTurno.id_tipo_turno) : null,
+        motivo_consulta: formTurno.motivo || tipo?.nombre || null,
       })
       setSlotAgendando(null)
       setRecargarTurnos((n) => n + 1)
@@ -354,6 +410,55 @@ export default function AgendaTab({ doctorId, readOnly = false, onResumenDia }) 
       setMensajeAccion(err?.message || 'No se pudo agendar el turno.')
     } finally {
       setGuardandoTurno(false)
+    }
+  }
+
+  function abrirAltaPaciente() {
+    setMensajeAlta('')
+    setFormAlta({ ...FORM_ALTA_VACIO, nombre: '', apellido: '' })
+    setAltaPaciente(slotAgendando)
+  }
+
+  /**
+   * Alta rápida desde la agenda: crea el paciente y lo deja ya seleccionado
+   * en el turno que se estaba agendando, sin pasar por la pestaña Pacientes.
+   */
+  async function guardarPacienteNuevo(event) {
+    event.preventDefault()
+    if (!formAlta.dni.trim() || !formAlta.nombre.trim() || !formAlta.apellido.trim()) {
+      setMensajeAlta('DNI, nombre y apellido son obligatorios.')
+      return
+    }
+
+    setGuardandoAlta(true)
+    setMensajeAlta('')
+    try {
+      const creado = await pacientesApi.crear({
+        dni: formAlta.dni.trim(),
+        nombre: formAlta.nombre.trim(),
+        apellido: formAlta.apellido.trim(),
+        email: formAlta.email.trim() || null,
+        telefono: formAlta.telefono.trim() || null,
+        fecha_nac: formAlta.fecha_nac || null,
+      })
+
+      setPacientes((prev) => {
+        const sinDuplicado = prev.filter((p) => Number(p.id_paciente) !== Number(creado.id_paciente))
+        return [...sinDuplicado, creado]
+      })
+      setFormTurno((prev) => ({ ...prev, id_paciente: String(creado.id_paciente) }))
+      setBusquedaPaciente('')
+      setAltaPaciente(null)
+      setFormAlta(FORM_ALTA_VACIO)
+      setMensajeAccion(
+        creado?.ya_existia
+          ? `${nombrePaciente(creado)} ya estaba registrado y quedó seleccionado.`
+          : `${nombrePaciente(creado)} se creó y quedó seleccionado.`
+      )
+    } catch (err) {
+      setMensajeAlta(err?.message || 'No se pudo crear el paciente.')
+    } finally {
+      setGuardandoAlta(false)
     }
   }
 
@@ -396,7 +501,48 @@ export default function AgendaTab({ doctorId, readOnly = false, onResumenDia }) 
       <div className="agenda-controls">
         <div className="agenda-nav">
           <button className="agenda-nav-btn" onClick={() => moverDia(-1)}><ChevronLeft size={16} /></button>
-          <span className="agenda-fecha-label" style={{ textTransform: 'capitalize' }}>{fechaLabel}</span>
+
+          {editandoFecha ? (
+            <div className="agenda-fecha-editor">
+              <SmartDateInput
+                id="agenda-fecha"
+                name="agenda-fecha"
+                className="form-input agenda-fecha-input"
+                value={fechaStr(fecha)}
+                onChange={(e) => irAFecha(e.target.value)}
+              />
+              {/* input nativo invisible: aporta el almanaque del sistema */}
+              <label className="agenda-nav-btn agenda-fecha-calendario" title="Abrir calendario">
+                <CalendarDays size={16} />
+                <input
+                  type="date"
+                  value={fechaStr(fecha)}
+                  onChange={(e) => irAFecha(e.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="agenda-fecha-hoy"
+                onClick={() => { setFecha(new Date()); setSlotAgendando(null); setEditandoFecha(false) }}
+              >
+                Hoy
+              </button>
+              <button type="button" className="agenda-fecha-hoy" onClick={() => setEditandoFecha(false)}>
+                Listo
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="agenda-fecha-label"
+              style={{ textTransform: 'capitalize' }}
+              onClick={() => setEditandoFecha(true)}
+              title="Clickeá para escribir la fecha o abrir el calendario"
+            >
+              {fechaLabel}
+            </button>
+          )}
+
           <button className="agenda-nav-btn" onClick={() => moverDia(1)}><ChevronRight size={16} /></button>
         </div>
         <div className="agenda-vista-label">Vista diaria</div>
@@ -436,7 +582,9 @@ export default function AgendaTab({ doctorId, readOnly = false, onResumenDia }) 
                       {tipo === 'turno' ? (
                         <>
                           <div>
-                            <span className="badge badge-primary" style={{ marginRight: 6 }}>Consulta</span>
+                            <span className="badge badge-primary" style={{ marginRight: 6 }}>
+                              {turno.tipo_turno_nombre || turno.motivo || 'Consulta'}
+                            </span>
                             {!marcado && (
                               <span className="badge badge-warning" style={{ marginRight: 6 }}>{estadoLabel(turno.estado)}</span>
                             )}
@@ -515,19 +663,79 @@ export default function AgendaTab({ doctorId, readOnly = false, onResumenDia }) 
                             && slotAgendando.fechaIso === key
                             && slotAgendando.hora === horaKey(slot.hora) && (
                             <form className="agenda-agendar-form" onSubmit={agendarTurno}>
-                              <select
-                                className="form-select"
-                                value={formTurno.id_paciente}
-                                onChange={(e) => setFormTurno({ ...formTurno, id_paciente: e.target.value })}
-                                required
-                              >
-                                <option value="">Elegí un paciente...</option>
-                                {pacientes.map((p) => (
-                                  <option key={p.id_paciente} value={String(p.id_paciente)}>
-                                    {`${p.apellido || ''} ${p.nombre || ''}`.trim()} - DNI {p.dni || '-'}
-                                  </option>
-                                ))}
-                              </select>
+                              {pacienteSeleccionado ? (
+                                <div className="agenda-paciente-elegido">
+                                  <span>
+                                    <strong>{nombrePaciente(pacienteSeleccionado)}</strong>
+                                    {pacienteSeleccionado.dni ? ` · DNI ${pacienteSeleccionado.dni}` : ''}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="agenda-fecha-hoy"
+                                    onClick={() => {
+                                      setFormTurno({ ...formTurno, id_paciente: '' })
+                                      setBusquedaPaciente('')
+                                    }}
+                                  >
+                                    Cambiar
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="agenda-buscar-paciente">
+                                  <div className="agenda-buscar-fila">
+                                    <input
+                                      className="form-input"
+                                      placeholder="Buscar por nombre, apellido o DNI..."
+                                      value={busquedaPaciente}
+                                      onChange={(e) => setBusquedaPaciente(e.target.value)}
+                                      autoComplete="off"
+                                    />
+                                    <button type="button" className="agenda-nuevo-paciente-btn" onClick={abrirAltaPaciente}>
+                                      <UserPlus size={13} /> Nuevo paciente
+                                    </button>
+                                  </div>
+
+                                  {busquedaPaciente.trim().length > 0 && (
+                                    <ul className="agenda-resultados">
+                                      {pacientesFiltrados.length === 0 && (
+                                        <li className="agenda-resultado-vacio">
+                                          Sin resultados. Podés crearlo con “Nuevo paciente”.
+                                        </li>
+                                      )}
+                                      {pacientesFiltrados.map((p) => (
+                                        <li key={p.id_paciente}>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setFormTurno({ ...formTurno, id_paciente: String(p.id_paciente) })
+                                              setBusquedaPaciente('')
+                                            }}
+                                          >
+                                            {nombrePaciente(p)}
+                                            <span className="agenda-resultado-dni">DNI {p.dni || '-'}</span>
+                                          </button>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </div>
+                              )}
+
+                              {tiposTurno.length > 0 && (
+                                <select
+                                  className="form-select"
+                                  value={formTurno.id_tipo_turno}
+                                  onChange={(e) => setFormTurno({ ...formTurno, id_tipo_turno: e.target.value })}
+                                >
+                                  <option value="">Tipo de turno (opcional)</option>
+                                  {tiposTurno.map((t) => (
+                                    <option key={t.id_tipo_turno} value={String(t.id_tipo_turno)}>
+                                      {`${t.nombre} · ${t.duracion_minutos} min`}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+
                               <input
                                 className="form-input"
                                 placeholder="Motivo (opcional)"
@@ -535,18 +743,17 @@ export default function AgendaTab({ doctorId, readOnly = false, onResumenDia }) 
                                 onChange={(e) => setFormTurno({ ...formTurno, motivo: e.target.value })}
                               />
                               <div className="agenda-slot-acciones">
-                                <button className="agenda-accion-btn asistio" type="submit" disabled={guardandoTurno}>
+                                <button
+                                  className="agenda-accion-btn asistio"
+                                  type="submit"
+                                  disabled={guardandoTurno || !formTurno.id_paciente}
+                                >
                                   {guardandoTurno ? 'Agendando...' : 'Confirmar'}
                                 </button>
                                 <button className="agenda-accion-btn cancelar" type="button" onClick={() => setSlotAgendando(null)}>
                                   Cancelar
                                 </button>
                               </div>
-                              {pacientes.length === 0 && (
-                                <span className="agenda-agendar-vacio">
-                                  Todavía no tenés pacientes con turnos previos para agendar.
-                                </span>
-                              )}
                             </form>
                           )}
                         </>
@@ -565,6 +772,96 @@ export default function AgendaTab({ doctorId, readOnly = false, onResumenDia }) 
         )}
       </div>
       {mensajeAccion && <p className="agenda-mensaje-accion">{mensajeAccion}</p>}
+
+      {altaPaciente && (
+        <div className="config-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setAltaPaciente(null) }}>
+          <form className="config-modal surface-raised agenda-alta-modal" onSubmit={guardarPacienteNuevo}>
+            <div className="config-modal-header">
+              <h3>Nuevo paciente</h3>
+              <p className="config-section-sub" style={{ margin: 0 }}>
+                Se crea y queda seleccionado para el turno de las {altaPaciente.hora}.
+              </p>
+            </div>
+
+            <div className="auth-grid-2">
+              <div className="form-group">
+                <label className="form-label" htmlFor="ag-dni">DNI</label>
+                <input
+                  id="ag-dni"
+                  className="form-input"
+                  inputMode="numeric"
+                  placeholder="Sin puntos"
+                  value={formAlta.dni}
+                  onChange={(e) => setFormAlta({ ...formAlta, dni: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="ag-nacimiento">Fecha de nacimiento</label>
+                <SmartDateInput
+                  id="ag-nacimiento"
+                  name="fecha_nac"
+                  value={formAlta.fecha_nac}
+                  onChange={(e) => setFormAlta({ ...formAlta, fecha_nac: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="auth-grid-2">
+              <div className="form-group">
+                <label className="form-label" htmlFor="ag-nombre">Nombre</label>
+                <input
+                  id="ag-nombre"
+                  className="form-input"
+                  value={formAlta.nombre}
+                  onChange={(e) => setFormAlta({ ...formAlta, nombre: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="ag-apellido">Apellido</label>
+                <input
+                  id="ag-apellido"
+                  className="form-input"
+                  value={formAlta.apellido}
+                  onChange={(e) => setFormAlta({ ...formAlta, apellido: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="auth-grid-2">
+              <div className="form-group">
+                <label className="form-label" htmlFor="ag-telefono">Teléfono (opcional)</label>
+                <input
+                  id="ag-telefono"
+                  className="form-input"
+                  value={formAlta.telefono}
+                  onChange={(e) => setFormAlta({ ...formAlta, telefono: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="ag-email">Email (opcional)</label>
+                <input
+                  id="ag-email"
+                  type="email"
+                  className="form-input"
+                  value={formAlta.email}
+                  onChange={(e) => setFormAlta({ ...formAlta, email: e.target.value })}
+                />
+              </div>
+            </div>
+
+            {mensajeAlta && <p className="config-terms-msg">{mensajeAlta}</p>}
+
+            <div className="config-modal-actions">
+              <button type="button" className="agenda-accion-btn cancelar" onClick={() => setAltaPaciente(null)}>
+                Cancelar
+              </button>
+              <button type="submit" className="agenda-accion-btn asistio" disabled={guardandoAlta}>
+                {guardandoAlta ? 'Creando...' : 'Crear y agregar al turno'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   )
 }

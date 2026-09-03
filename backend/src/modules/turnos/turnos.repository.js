@@ -155,12 +155,15 @@ async function listTurnosByMedicoRange({ idMedico, desde, hasta }) {
             DATE_FORMAT(t.hora_fin, '%H:%i') AS hora_fin,
             t.estado,
             t.id_clinica,
+            t.motivo,
+            tt.nombre AS tipo_turno_nombre,
             c.nombre AS clinica_nombre,
             p.nombre AS paciente_nombre,
             p.apellido AS paciente_apellido
      FROM turnos t
      INNER JOIN pacientes p ON p.id_paciente = t.id_paciente
      LEFT JOIN clinicas c ON c.id_clinica = t.id_clinica
+     LEFT JOIN medico_tipos_turno tt ON tt.id_tipo_turno = t.id_tipo_turno
      WHERE t.id_medico = :idMedico
        AND t.fecha BETWEEN :desde AND :hasta
      ORDER BY t.fecha, t.hora_inicio`,
