@@ -1,98 +1,129 @@
-const nodemailer = require('nodemailer')
+const { Resend } = require('resend')
 const env = require('../config/env')
 
-const RESEND_API_URL = 'https://api.resend.com/emails'
-const ENVIO_TIMEOUT_MS = 15000
+// La API key puede venir con el nombre convencional de Resend o reusando el que
+// ya se usaba para SMTP. Se aceptan los dos para no depender de cómo quedó
+// nombrada la variable en cada entorno.
+const API_KEY = env.RESEND_API_KEY || null
 
-function esApiKeyResend(value) {
+function apiKeyValida(value) {
   return typeof value === 'string' && value.startsWith('re_')
 }
 
 /**
- * Envía por la API HTTP de Resend en vez de SMTP.
- *
- * Render (y varios PaaS) bloquean los puertos SMTP salientes (465/587), así que
- * conectarse a smtp.resend.com desde ahí termina siempre en ETIMEDOUT. La API va
- * por HTTPS, que nunca está bloqueado. Se usa la misma API key que el SMTP.
+ * Pista de la key para los logs: nunca la key completa, solo lo justo para
+ * saber cuál está cargada si hay más de un entorno.
  */
-function createResendHttpTransporter() {
-  return {
-    sendMail: async ({ from, to, subject, text, html }) => {
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), ENVIO_TIMEOUT_MS)
-
-      try {
-        const res = await fetch(RESEND_API_URL, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${env.MAIL_PASSWORD}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            from,
-            to: Array.isArray(to) ? to : [to],
-            subject,
-            ...(text ? { text } : {}),
-            ...(html ? { html } : {}),
-          }),
-          signal: controller.signal,
-        })
-
-        const payload = await res.json().catch(() => ({}))
-
-        if (!res.ok) {
-          const detalle = payload?.message || payload?.name || `HTTP ${res.status}`
-          throw new Error(`Resend rechazó el envío: ${detalle}`)
-        }
-
-        return { messageId: payload?.id || 'resend-api' }
-      } catch (err) {
-        if (err.name === 'AbortError') {
-          throw new Error(`Timeout al contactar la API de Resend (${ENVIO_TIMEOUT_MS}ms)`)
-        }
-        throw err
-      } finally {
-        clearTimeout(timeout)
-      }
-    },
-  }
+function pistaKey(value) {
+  if (!value) return '(ausente)'
+  if (typeof value !== 'string') return '(tipo inválido)'
+  return `${value.slice(0, 6)}…${value.slice(-4)} (${value.length} chars)`
 }
 
 /**
- * Crea el transporter según el entorno.
- * En desarrollo (o sin MAIL_HOST) simula el envío por consola.
+ * Decide cómo se mandan los mails y deja constancia en el log del arranque.
+ *
+ * Importante: NO se simula fuera de development. Antes, si faltaba una variable
+ * en producción el sistema simulaba en silencio y los mails desaparecían sin
+ * ningún error visible. Ahora eso falla ruidosamente.
  */
-function createTransporter() {
-  if (env.NODE_ENV === 'development' || !env.MAIL_HOST) {
+function resolverModo() {
+  const esDesarrollo = env.NODE_ENV === 'development'
+
+  if (esDesarrollo) {
+    return { modo: 'simulado', motivo: 'NODE_ENV=development' }
+  }
+
+  if (!API_KEY) {
     return {
-      sendMail: async (opts) => {
-        console.log('\n📧  EMAIL SIMULADO (NODE_ENV=development)')
-        console.log(`   Para:    ${opts.to}`)
-        console.log(`   Asunto:  ${opts.subject}`)
-        console.log('   ---')
-        console.log(opts.text || opts.html || '')
-        console.log('---\n')
-        return { messageId: 'dev-simulated' }
-      },
+      modo: 'roto',
+      motivo: 'No hay API key: falta RESEND_API_KEY (o MAIL_PASSWORD) en el entorno',
     }
   }
 
-  if (esApiKeyResend(env.MAIL_PASSWORD)) {
-    return createResendHttpTransporter()
+  if (!apiKeyValida(API_KEY)) {
+    return {
+      modo: 'roto',
+      motivo: `La API key no parece de Resend (debería empezar con "re_"): ${pistaKey(API_KEY)}`,
+    }
   }
 
-  return nodemailer.createTransport({
-    host: env.MAIL_HOST,
-    port: env.MAIL_PORT,
-    secure: env.MAIL_PORT === 465,
-    auth: {
-      user: env.MAIL_USER,
-      pass: env.MAIL_PASSWORD,
-    },
-  })
+  if (!env.MAIL_FROM) {
+    return { modo: 'roto', motivo: 'Falta MAIL_FROM en el entorno' }
+  }
+
+  return { modo: 'resend', motivo: 'API HTTP de Resend' }
 }
 
-const transporter = createTransporter()
+const { modo, motivo } = resolverModo()
+
+console.log('[mailer] ── configuración de envío ──')
+console.log(`[mailer] NODE_ENV        : ${env.NODE_ENV || '(sin definir)'}`)
+console.log(`[mailer] modo            : ${modo} (${motivo})`)
+console.log(`[mailer] API key         : ${pistaKey(API_KEY)}`)
+console.log(`[mailer] MAIL_FROM       : ${env.MAIL_FROM || '(ausente)'}`)
+console.log(`[mailer] MAIL_FROM_RECETAS: ${env.MAIL_FROM_RECETAS || '(ausente)'}`)
+console.log(`[mailer] MAIL_FROM_TURNOS : ${env.MAIL_FROM_TURNOS || '(ausente)'}`)
+if (modo === 'roto') {
+  console.error(`[mailer] ⚠️  LOS MAILS NO SE VAN A ENVIAR: ${motivo}`)
+}
+console.log('[mailer] ───────────────────────────')
+
+const resend = modo === 'resend' ? new Resend(API_KEY) : null
+
+/**
+ * Punto único de envío. Todas las funciones de abajo pasan por acá, así que
+ * cualquier mail queda registrado en el log con su resultado.
+ */
+async function enviar({ from, to, subject, text }) {
+  const destino = Array.isArray(to) ? to.join(', ') : to
+
+  if (modo === 'simulado') {
+    console.log('\n📧  EMAIL SIMULADO (NODE_ENV=development)')
+    console.log(`   De:      ${from}`)
+    console.log(`   Para:    ${destino}`)
+    console.log(`   Asunto:  ${subject}`)
+    console.log('   ---')
+    console.log(text || '')
+    console.log('---\n')
+    return { id: 'dev-simulated' }
+  }
+
+  if (modo === 'roto') {
+    console.error(`[mailer] ✖ No se envía "${subject}" a ${destino}: ${motivo}`)
+    throw new Error(`Envío de mail no configurado: ${motivo}`)
+  }
+
+  console.log(`[mailer] → enviando "${subject}" de ${from} a ${destino}`)
+
+  let data
+  let error
+  try {
+    ({ data, error } = await resend.emails.send({
+      from,
+      to: Array.isArray(to) ? to : [to],
+      subject,
+      text,
+    }))
+  } catch (err) {
+    // Error de red/DNS/timeout: nunca llegó a la API.
+    console.error(`[mailer] ✖ fallo de red al contactar Resend: ${err.message}`)
+    throw err
+  }
+
+  // El SDK devuelve el error en el payload en vez de tirar excepción.
+  if (error) {
+    const detalle = error.message || error.name || JSON.stringify(error)
+    console.error(`[mailer] ✖ Resend rechazó "${subject}" para ${destino}: ${detalle}`)
+    throw new Error(`Resend rechazó el envío: ${detalle}`)
+  }
+
+  console.log(`[mailer] ✔ enviado "${subject}" a ${destino} (id: ${data?.id || 's/id'})`)
+  return data
+}
+
+// Mantiene la interfaz que ya usaban todas las funciones de este archivo.
+const transporter = { sendMail: enviar }
 
 /**
  * Envía el correo de recuperación de contraseña.
