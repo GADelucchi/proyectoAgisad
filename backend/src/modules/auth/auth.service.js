@@ -8,7 +8,7 @@ const {
   existsUsername,
 } = require('./auth.repository')
 const { issueSession, buildUserPayload } = require('./session')
-const { normalizePlanCode } = require('../membresias/membresias.service')
+const { normalizePlanCode, validarPlanRegistrable } = require('../membresias/membresias.service')
 const { emitirCodigo } = require('../email-verification/email-verification.service')
 const {
   validateEmail,
@@ -22,16 +22,6 @@ const {
 
 function normalizeText(value) {
   return typeof value === 'string' ? value.trim() : ''
-}
-
-function isStrongPassword(value) {
-  if (typeof value !== 'string') return false
-  if (value.length < 8) return false
-
-  const hasLetter = /[A-Za-z]/.test(value)
-  const hasNumber = /\d/.test(value)
-
-  return hasLetter && hasNumber
 }
 
 async function ensureUsername(email, desiredUsername) {
@@ -164,7 +154,12 @@ async function columnExists(conn, tableName, columnName) {
   return Number(rows[0]?.total || 0) > 0
 }
 
-async function resolveOrCreatePlan(conn, rawPlanName) {
+/**
+ * Busca el plan en el catálogo. Ya no se crean planes desde un registro: un
+ * plan nuevo nacería con los valores por defecto de la tabla (turnos y
+ * asistentes ilimitados, sin precio).
+ */
+async function resolvePlan(conn, rawPlanName) {
   const planName = normalizeText(rawPlanName)
   if (!planName) return { idPlan: null, code: null }
 
@@ -178,42 +173,17 @@ async function resolveOrCreatePlan(conn, rawPlanName) {
   const [existing] = await conn.execute(
     `SELECT id_plan, codigo
      FROM membresia_planes
-     WHERE codigo = ? OR LOWER(nombre) = LOWER(?)
+     WHERE (codigo = ? OR LOWER(nombre) = LOWER(?))
+       AND activo = 1
      LIMIT 1`,
     [planCode, planName]
   )
 
-  if (existing[0]?.id_plan) {
-    return {
-      idPlan: existing[0].id_plan,
-      code: existing[0].codigo || planCode,
-    }
+  if (!existing[0]?.id_plan) {
+    throw new HttpError(400, 'El plan elegido no está disponible')
   }
 
-  try {
-    const [inserted] = await conn.execute(
-      `INSERT INTO membresia_planes (codigo, nombre, descripcion, activo)
-       VALUES (?, ?, ?, 1)`,
-      [planCode, planName, `Plan ${planName}`]
-    )
-
-    return { idPlan: inserted.insertId, code: planCode }
-  } catch (err) {
-    if (err?.code !== 'ER_DUP_ENTRY') throw err
-
-    const [retry] = await conn.execute(
-      `SELECT id_plan, codigo
-       FROM membresia_planes
-       WHERE codigo = ?
-       LIMIT 1`,
-      [planCode]
-    )
-
-    return {
-      idPlan: retry[0]?.id_plan || null,
-      code: retry[0]?.codigo || planCode,
-    }
-  }
+  return { idPlan: existing[0].id_plan, code: existing[0].codigo || planCode }
 }
 
 async function createMembershipForUser(conn, { userId, plan }) {
@@ -224,7 +194,7 @@ async function createMembershipForUser(conn, { userId, plan }) {
   if (!hasMembershipTable) return
 
   const hasPlanIdInMembership = await columnExists(conn, 'membresias', 'id_plan')
-  const resolvedPlan = await resolveOrCreatePlan(conn, requestedPlan)
+  const resolvedPlan = await resolvePlan(conn, requestedPlan)
   const planCode = resolvedPlan.code || normalizePlanCode(requestedPlan) || requestedPlan
   const [planCatalogRows] = await conn.execute(
     `SELECT id_plan, vigencia_meses, precio_mensual
@@ -454,6 +424,7 @@ async function registerMedico(input) {
   const validatedNombre = validateName(input.nombre, 'El nombre')
   const validatedApellido = validateName(input.apellido, 'El apellido')
   const validatedMatricula = validateMatricula(input.matricula)
+  const plan = validarPlanRegistrable(input.plan, 'medico')
   const validatedTelefono = validatePhoneNumber(input.telefono, false)
   const validatedBio = validateTextField(input.bio, 500, 'La biografía', false)
 
@@ -521,7 +492,7 @@ async function registerMedico(input) {
 
     await createMembershipForUser(conn, {
       userId,
-      plan: input.plan,
+      plan,
     })
 
     // Crear tipos de consulta por defecto para el médico
@@ -583,6 +554,7 @@ async function registerGerente(input) {
   const validatedApellido = validateName(input.apellido, 'El apellido')
   const validatedTelefono = validatePhoneNumber(input.telefono, false)
   const validatedClinicaNombre = validateTextField(input.clinica_nombre, 100, 'El nombre de la clínica', true)
+  const plan = validarPlanRegistrable(input.plan, 'gerente')
   const validatedDireccion = validateTextField(input.direccion, 200, 'La dirección', true)
 
   const conn = await pool.getConnection()
@@ -619,7 +591,7 @@ async function registerGerente(input) {
 
     await createMembershipForUser(conn, {
       userId,
-      plan: input.plan,
+      plan,
     })
 
     await conn.commit()
@@ -668,6 +640,7 @@ async function registerPropietario(input) {
 
   const validatedNombre = validateName(input.nombre, 'El nombre')
   const validatedApellido = validateName(input.apellido, 'El apellido')
+  const plan = validarPlanRegistrable(input.plan || 'espacios', 'propietario')
   const validatedTelefono = validatePhoneNumber(input.telefono, false)
 
   const conn = await pool.getConnection()
@@ -690,7 +663,7 @@ async function registerPropietario(input) {
 
     await createMembershipForUser(conn, {
       userId,
-      plan: input.plan || 'espacios',
+      plan,
     })
 
     await conn.commit()

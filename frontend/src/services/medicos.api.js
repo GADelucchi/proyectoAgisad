@@ -1,19 +1,28 @@
 import { api } from './apiClient'
 
+function mapMedico(row) {
+  return {
+    id: row.id_medico,
+    nombre: `${row.nombre || ''} ${row.apellido || ''}`.trim(),
+    especialidad: row.especialidad || 'Especialidad general',
+    matricula: row.matricula || '-',
+    consultorios: [],
+    permiteTurnos: row.permite_turnos !== 0 && row.permite_turnos !== false,
+  }
+}
+
 export const medicosApi = {
   list: async (q = '') => {
     const query = q ? `?q=${encodeURIComponent(q)}` : ''
     const rows = await api.get(`/medicos${query}`)
-    return Array.isArray(rows)
-      ? rows.map((row) => ({
-        id: row.id_medico,
-        nombre: `${row.nombre || ''} ${row.apellido || ''}`.trim(),
-        especialidad: row.especialidad || 'Especialidad general',
-        matricula: row.matricula || '-',
-        consultorios: [],
-        permiteTurnos: row.permite_turnos !== 0 && row.permite_turnos !== false,
-      }))
-      : []
+    return Array.isArray(rows) ? rows.map(mapMedico) : []
+  },
+  getById: async (idMedico) => mapMedico(await api.get(`/medicos/${idMedico}`)),
+  /** Estado de cada día del rango ('disponible' | 'bloqueada' | 'sin-horarios'), en una sola request. */
+  getResumenDisponibilidad: ({ idMedico, idClinica, desde, hasta, duracionMinutos }) => {
+    const qs = new URLSearchParams({ id_clinica: String(idClinica), desde, hasta })
+    if (duracionMinutos) qs.set('duracion_minutos', String(duracionMinutos))
+    return api.get(`/medicos/${idMedico}/disponibilidad-resumen?${qs.toString()}`)
   },
   listClinicasByMedico: (idMedico) => api.get(`/medicos/${idMedico}/clinicas`),
   getDisponibilidad: ({ idMedico, idClinica, fecha, duracionMinutos }) => {

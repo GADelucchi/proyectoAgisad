@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'
 import { ThemeProvider } from './context/ThemeContext'
 import { AuthProvider } from './context/AuthContext'
 import SeoManager from './components/SeoManager'
@@ -15,7 +15,6 @@ import LoginPage            from './pages/public/LoginPage'
 import RegistroPage         from './pages/public/RegistroPage'
 import RegistroPacientePage from './pages/public/RegistroPacientePage'
 import RegistroMedicoPage   from './pages/public/RegistroMedicoPage'
-import RegistroGerentePage  from './pages/public/RegistroGerentePage'
 import RegistroPropietarioPage from './pages/public/RegistroPropietarioPage'
 import InvitacionPage       from './pages/public/InvitacionPage'
 import VerificarEmailPage   from './pages/public/VerificarEmailPage'
@@ -56,7 +55,8 @@ export default function App() {
                 <Route path="/registro/paciente" element={<RegistroPacientePage />} />
                 <Route path="/registro/profesional" element={<RegistroMedicoPage />} />
                 <Route path="/registro/medico" element={<RegistroMedicoPage />} />
-                <Route path="/registro/gerente" element={<RegistroGerentePage />} />
+                {/* Los gerentes se registran desde /registro/profesional con el plan Empresarial. */}
+                <Route path="/registro/gerente" element={<Navigate to="/registro/profesional" replace />} />
                 <Route path="/registro/propietario" element={<RegistroPropietarioPage />} />
                 <Route path="/invitacion/:token" element={<InvitacionPage />} />
                 <Route path="/verificar-email" element={<VerificarEmailPage />} />

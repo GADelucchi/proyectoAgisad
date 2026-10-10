@@ -2,14 +2,12 @@ import { useState } from 'react'
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, MapPin, Stethoscope } from 'lucide-react'
-import { useAuth } from '../../context/AuthContext'
 import { medicosApi } from '../../services/medicos.api'
 import { turnosApi } from '../../services/turnos.api'
 import { formatDateDdMmYyyy, formatTime24h } from '../../utils/dateFormat'
 import './BuscadorMedicoPage.css'
 
 export default function BuscadorMedicoPage() {
-  const { usuario } = useAuth()
   const [query, setQuery] = useState('')
   const [medicosApiRows, setMedicosApiRows] = useState([])
   const [turnosApiRows, setTurnosApiRows] = useState([])

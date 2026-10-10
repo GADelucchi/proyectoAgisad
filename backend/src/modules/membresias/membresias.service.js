@@ -12,6 +12,15 @@ const PLAN_ALIASES = {
   empresarial: 'empresarial',
 }
 
+// Planes que se pueden elegir al registrarse, por rol. El catálogo tiene otros
+// (ej. "legacy") que solo asigna el admin: si se aceptara cualquier código,
+// alguien podría registrarse con un plan sin precio y con todo habilitado.
+const PLANES_REGISTRABLES = {
+  medico: ['inicial', 'medio', 'profesional', 'empresarial'],
+  gerente: ['empresarial'],
+  propietario: ['espacios'],
+}
+
 function normalizeText(value) {
   return typeof value === 'string' ? value.trim() : ''
 }
@@ -23,6 +32,20 @@ function normalizePlanCode(value) {
     .replace(/[^a-z0-9_\-]/g, '')
 
   return PLAN_ALIASES[normalized] || normalized
+}
+
+/**
+ * Valida el plan pedido en un registro y devuelve su código normalizado,
+ * o null si no se pidió ninguno.
+ */
+function validarPlanRegistrable(rawPlan, rol) {
+  if (rawPlan === undefined || rawPlan === null || rawPlan === '') return null
+
+  const codigo = normalizePlanCode(rawPlan)
+  if (!(PLANES_REGISTRABLES[rol] || []).includes(codigo)) {
+    throw new HttpError(400, 'El plan elegido no está disponible')
+  }
+  return codigo
 }
 
 async function getCurrentMembershipByUserId(idUsuario) {
@@ -188,17 +211,10 @@ async function assertOwnMembershipActive(idUsuario, actionMessage = 'Esta acció
   return membership
 }
 
-async function assertOwnMembershipActiveByMedicoId(idMedico, actionMessage = 'Esta acción') {
-  const idUsuario = await findUserIdByMedicoId(idMedico)
-  if (!idUsuario) {
-    throw new HttpError(404, 'Medico no encontrado')
-  }
-
-  return assertOwnMembershipActive(idUsuario, actionMessage)
-}
-
 module.exports = {
+  PLANES_REGISTRABLES,
   normalizePlanCode,
+  validarPlanRegistrable,
   getCurrentMembershipByUserId,
   findUserIdByMedicoId,
   assertUserFeatureByUserId,
@@ -206,5 +222,4 @@ module.exports = {
   assertMembershipNotExpired,
   assertMembershipNotExpiredByMedicoId,
   assertOwnMembershipActive,
-  assertOwnMembershipActiveByMedicoId,
 }

@@ -5,6 +5,7 @@ import PasswordInput from '../../components/ui/PasswordInput'
 import { authApi } from '../../services/auth.api'
 import { ApiError } from '../../services/apiClient'
 import './AuthPages.css'
+import { PASSWORD_HINT, validarPassword } from '../../utils/password'
 
 export default function NuevaPasswordPage() {
   const { token } = useParams()
@@ -27,8 +28,9 @@ export default function NuevaPasswordPage() {
       return
     }
 
-    if (!form.password || form.password.length < 6) {
-      setError('La contraseña debe tener al menos 6 caracteres.')
+    const errorPassword = validarPassword(form.password)
+    if (errorPassword) {
+      setError(errorPassword)
       return
     }
 
@@ -67,7 +69,7 @@ export default function NuevaPasswordPage() {
               name="password"
               value={form.password}
               onChange={handleChange}
-              placeholder="Mínimo 6 caracteres"
+              placeholder={PASSWORD_HINT}
               autoComplete="new-password"
             />
           </div>

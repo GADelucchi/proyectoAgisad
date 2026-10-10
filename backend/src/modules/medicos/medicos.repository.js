@@ -1,7 +1,8 @@
 const { query, pool } = require('../../db/query')
 
-async function listMedicos({ q, idEspecialidad, idCiudad }) {
+async function listMedicos({ q, idEspecialidad, idCiudad, idMedico }) {
   const params = {
+    idMedico: idMedico || null,
     q: q || null,
     idEspecialidad: idEspecialidad || null,
     idCiudad: idCiudad || null,
@@ -34,6 +35,7 @@ async function listMedicos({ q, idEspecialidad, idCiudad }) {
     ) ms ON ms.id_usuario = u.id_usuario
     LEFT JOIN membresia_planes mp ON mp.id_plan = ms.id_plan OR LOWER(mp.codigo) = LOWER(ms.plan)
     WHERE 1=1
+      AND (:idMedico IS NULL OR m.id_medico = :idMedico)
       AND (:idEspecialidad IS NULL OR m.id_especialidad = :idEspecialidad)
       AND (:idCiudad IS NULL OR m.id_ciudad = :idCiudad)
       AND (
@@ -75,6 +77,7 @@ async function listMedicos({ q, idEspecialidad, idCiudad }) {
       ) ms ON ms.id_usuario = u.id_usuario
       LEFT JOIN membresia_planes mp ON mp.id_plan = ms.id_plan OR LOWER(mp.codigo) = LOWER(ms.plan)
       WHERE 1=1
+        AND (:idMedico IS NULL OR m.id_medico = :idMedico)
         AND (:idCiudad IS NULL OR m.id_ciudad = :idCiudad)
         AND (
           :q IS NULL
@@ -109,6 +112,40 @@ async function findDisponibilidadByMedicoClinicaDia({ idMedico, idClinica, diaSe
   })
 }
 
+/** Franjas semanales de todos los días, para calcular un rango de fechas. */
+async function findDisponibilidadByMedicoClinica({ idMedico, idClinica }) {
+  return query(
+    `SELECT id_disponibilidad,
+            dia_semana,
+            DATE_FORMAT(hora_inicio, '%H:%i') AS hora_inicio,
+            DATE_FORMAT(hora_fin, '%H:%i') AS hora_fin,
+            duracion_turno
+     FROM medico_disponibilidad
+     WHERE id_medico = :idMedico
+       AND id_clinica = :idClinica
+       AND activo = 1
+     ORDER BY dia_semana, hora_inicio`,
+    { idMedico, idClinica }
+  )
+}
+
+async function findExtraDisponibilidadByMedicoClinicaRango({ idMedico, idClinica, desde, hasta }) {
+  return query(
+    `SELECT
+       id_excepcion,
+       DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha,
+       DATE_FORMAT(hora_inicio, '%H:%i') AS hora_inicio,
+       DATE_FORMAT(hora_fin, '%H:%i') AS hora_fin
+     FROM medico_disponibilidad_excepciones
+     WHERE id_medico = :idMedico
+       AND id_clinica = :idClinica
+       AND fecha BETWEEN :desde AND :hasta
+       AND tipo = 'extra'
+     ORDER BY fecha, hora_inicio`,
+    { idMedico, idClinica, desde, hasta }
+  )
+}
+
 async function findExtraDisponibilidadByMedicoClinicaFecha({ idMedico, idClinica, fecha }) {
   return query(
     `SELECT
@@ -135,6 +172,20 @@ async function findTurnosTomados({ idMedico, fecha }) {
        AND fecha = :fecha
        AND estado NOT IN ('cancelado', 'cancelado_paciente', 'cancelado_clinica')`,
     { idMedico, fecha }
+  )
+}
+
+async function findTurnosTomadosRango({ idMedico, desde, hasta }) {
+  return query(
+    `SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha,
+            DATE_FORMAT(hora_inicio, '%H:%i') AS hora,
+            DATE_FORMAT(hora_fin, '%H:%i') AS hora_fin,
+            motivo AS motivo_consulta
+     FROM turnos
+     WHERE id_medico = :idMedico
+       AND fecha BETWEEN :desde AND :hasta
+       AND estado NOT IN ('cancelado', 'cancelado_paciente', 'cancelado_clinica')`,
+    { idMedico, desde, hasta }
   )
 }
 
@@ -669,6 +720,9 @@ module.exports = {
   listMedicos,
   findDisponibilidadByMedicoClinicaDia,
   findExtraDisponibilidadByMedicoClinicaFecha,
+  findDisponibilidadByMedicoClinica,
+  findExtraDisponibilidadByMedicoClinicaRango,
+  findTurnosTomadosRango,
   findTurnosTomados,
   findTurnosFuturosByMedico,
   findMedicoIdByUserId,

@@ -1,22 +1,8 @@
 const { query, pool } = require('../../db/query')
 
-function normalizeLabel(value) {
-  return String(value || '').trim().toLowerCase()
-}
-
 function toMinutes(value) {
   const [h, m] = String(value || '').slice(0, 5).split(':').map(Number)
   return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0)
-}
-
-function resolveDuration({ requested, motivo, defaultDuration, byTypeName }) {
-  const requestedNum = Number(requested)
-  if (Number.isInteger(requestedNum) && requestedNum > 0) return requestedNum
-
-  const byMotivo = byTypeName.get(normalizeLabel(motivo))
-  if (Number.isInteger(byMotivo) && byMotivo > 0) return byMotivo
-
-  return defaultDuration
 }
 
 async function insertTurno(data) {
@@ -160,13 +146,13 @@ async function listTurnosByMedicoRange({ idMedico, desde, hasta }) {
             c.nombre AS clinica_nombre,
             p.nombre AS paciente_nombre,
             p.apellido AS paciente_apellido
-     FROM turnos t
-     INNER JOIN pacientes p ON p.id_paciente = t.id_paciente
-     LEFT JOIN clinicas c ON c.id_clinica = t.id_clinica
-     LEFT JOIN medico_tipos_turno tt ON tt.id_tipo_turno = t.id_tipo_turno
-     WHERE t.id_medico = :idMedico
-       AND t.fecha BETWEEN :desde AND :hasta
-     ORDER BY t.fecha, t.hora_inicio`,
+            FROM turnos t
+            INNER JOIN pacientes p ON p.id_paciente = t.id_paciente
+            LEFT JOIN clinicas c ON c.id_clinica = t.id_clinica
+            LEFT JOIN medico_tipos_turno tt ON tt.id_tipo_turno = t.id_tipo_turno
+            WHERE t.id_medico = :idMedico
+            AND t.fecha BETWEEN :desde AND :hasta
+            ORDER BY t.fecha, t.hora_inicio`,
     { idMedico, desde, hasta }
   )
 }
@@ -213,17 +199,6 @@ async function findPacienteIdByUserId(idUsuario) {
     { idUsuario }
   )
   return rows[0]?.id_paciente || null
-}
-
-async function findMedicoIdByUserId(idUsuario) {
-  const rows = await query(
-    `SELECT id_medico
-     FROM medicos
-     WHERE id_usuario = :idUsuario
-     LIMIT 1`,
-    { idUsuario }
-  )
-  return rows[0]?.id_medico || null
 }
 
 async function listTurnosByPaciente({ idPaciente, idMedico = null }) {
@@ -331,6 +306,19 @@ async function findTurnosTomadosPorClinica({ idClinica, fecha }) {
   )
 }
 
+async function findTurnosTomadosPorClinicaRango({ idClinica, desde, hasta }) {
+  return query(
+    `SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha,
+            DATE_FORMAT(hora_inicio, '%H:%i') AS hora,
+            DATE_FORMAT(hora_fin, '%H:%i') AS hora_fin
+     FROM turnos
+     WHERE id_clinica = :idClinica
+       AND fecha BETWEEN :desde AND :hasta
+       AND estado NOT IN ('cancelado', 'cancelado_paciente', 'cancelado_clinica')`,
+    { idClinica, desde, hasta }
+  )
+}
+
 // Horas reservadas (no canceladas) por médico en un consultorio, para que el
 // dueño cobre el alquiler por fuera del sistema.
 async function reporteUsoPorClinica({ idClinica, desde, hasta }) {
@@ -358,12 +346,12 @@ module.exports = {
   listTurnosByMedicoRange,
   listHistorialByMedicoRange,
   findPacienteIdByUserId,
-  findMedicoIdByUserId,
   listTurnosByPaciente,
   medicoPermiteTurnos,
   findTipoTurnoById,
   findMedicoNotifInfoById,
   findTurnoResumenById,
   findTurnosTomadosPorClinica,
+  findTurnosTomadosPorClinicaRango,
   reporteUsoPorClinica,
 }

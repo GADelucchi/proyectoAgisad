@@ -141,14 +141,6 @@ async function existsUsername(username) {
   return Boolean(rows[0])
 }
 
-async function findEspecialidadIdByName(nombre) {
-  const rows = await query(
-    'SELECT id_especialidad FROM especialidades WHERE nombre = :nombre LIMIT 1',
-    { nombre }
-  )
-  return rows[0]?.id_especialidad || null
-}
-
 async function updateUltimoLogin(idUsuario) {
   await query(
     `UPDATE usuarios
@@ -163,6 +155,5 @@ module.exports = {
   findUserById,
   findRoleIdByName,
   existsUsername,
-  findEspecialidadIdByName,
   updateUltimoLogin,
 }

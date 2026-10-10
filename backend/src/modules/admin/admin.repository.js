@@ -361,32 +361,6 @@ async function listFinanzasMovimientos({ limit = 100 }) {
   )
 }
 
-async function findUserSubscriptionByEmail(email) {
-  const rows = await query(`
-    SELECT 
-      u.email,
-      u.username,
-      r.nombre AS rol,
-      m.id_membresia,
-      m.plan,
-      m.estado,
-      m.fecha_inicio,
-      m.fecha_fin,
-      m.monto_mensual,
-      m.pagado_hasta,
-      m.auto_renueva,
-      m.creado_en
-    FROM usuarios u
-    INNER JOIN roles r ON r.id_rol = u.id_rol
-    LEFT JOIN membresias m ON u.id_usuario = m.id_usuario
-    WHERE u.email = :email
-    ORDER BY m.creado_en DESC
-    LIMIT 1
-  `, { email })
-  
-  return rows[0] || { error: 'Usuario no encontrado' }
-}
-
 async function reactivateMembershipByUser({
   idUsuario,
   rawPlan,
@@ -560,23 +534,6 @@ async function reactivateMembershipByUser({
   }
 }
 
-async function listAdicionalesConsultorio(estado = null) {
-  return query(
-    `SELECT ac.id_adicional, ac.id_medico, ac.estado, ac.monto_mensual, ac.max_consultorios,
-            DATE_FORMAT(ac.solicitado_en, '%d/%m/%Y %H:%i') AS solicitado_en,
-            DATE_FORMAT(ac.activado_en, '%d/%m/%Y') AS activado_en,
-            m.nombre, m.apellido, m.matricula, u.email, u.id_usuario
-     FROM medico_adicional_consultorios ac
-     INNER JOIN medicos m ON m.id_medico = ac.id_medico
-     INNER JOIN usuarios u ON u.id_usuario = m.id_usuario
-     WHERE (:estado IS NULL OR ac.estado = :estado)
-     ORDER BY ac.solicitado_en DESC`,
-    { estado }
-  )
-}
-
-
-
 async function findAdicionalesActivosByMedicoUsuario(idUsuario) {
   return query(
     `SELECT ac.id_adicional, ac.monto_mensual, ac.max_consultorios, ac.estado,
@@ -603,8 +560,6 @@ module.exports = {
   getFinanzasResumen,
   listFinanzasMensual,
   listFinanzasMovimientos,
-  findUserSubscriptionByEmail,
   reactivateMembershipByUser,
-  listAdicionalesConsultorio,
   findAdicionalesActivosByMedicoUsuario,
 }

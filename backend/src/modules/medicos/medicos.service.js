@@ -1,17 +1,18 @@
 const HttpError = require('../../utils/httpError')
 const medicosRepo = require('./medicos.repository')
 const { assertUserFeatureByUserId, assertOwnMembershipActive } = require('../membresias/membresias.service')
+const { validateDate } = require('../../utils/validators')
+const {
+  toMinutes,
+  getDayOfWeek,
+  formatLocalDate,
+  fechasEntre,
+  armarSlots,
+  estadoDelDia,
+} = require('../../utils/slots')
 
-function toMinutes(value) {
-  const [h, m] = String(value).split(':').map(Number)
-  return h * 60 + m
-}
-
-function toTime(minutes) {
-  const h = String(Math.floor(minutes / 60)).padStart(2, '0')
-  const m = String(minutes % 60).padStart(2, '0')
-  return `${h}:${m}:00`
-}
+// Tope del resumen de disponibilidad: alcanza para el calendario de dos meses.
+const MAX_DIAS_RESUMEN = 62
 
 function normalizeHourKey(value) {
   return String(value || '').slice(0, 5)
@@ -19,12 +20,6 @@ function normalizeHourKey(value) {
 
 function normalizeLabel(value) {
   return String(value || '').trim().toLowerCase()
-}
-
-function getDayOfWeek(dateIso) {
-  const date = new Date(`${dateIso}T00:00:00`)
-  const jsDay = date.getDay()
-  return jsDay
 }
 
 const INDEX_TO_DAY = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab']
@@ -78,24 +73,6 @@ function normalizeRangosUnicos(inputRangos) {
     .filter((r) => r.fecha && r.inicio && r.fin)
 }
 
-function isSlotBlocked({ slotHora, bloqueos }) {
-  const slot = String(slotHora).slice(0, 5)
-  for (const b of bloqueos) {
-    const from = b.hora_inicio ? String(b.hora_inicio).slice(0, 5) : null
-    const to = b.hora_fin ? String(b.hora_fin).slice(0, 5) : null
-    if (!from || !to) return true
-    if (slot >= from && slot < to) return true
-  }
-  return false
-}
-
-function formatLocalDate(date) {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
-
 async function resolveMedicoOrThrow({ requesterIdUsuario, requesterRol }) {
   if (requesterRol !== 'medico') {
     throw new HttpError(403, 'Solo medicos pueden realizar esta accion')
@@ -121,6 +98,60 @@ async function ensureTurnosFeatureForUser(idUsuario) {
   })
 }
 
+async function getMedicoPublico({ idMedico }) {
+  if (!idMedico) throw new HttpError(400, 'id_medico es obligatorio')
+  const [medico] = await medicosRepo.listMedicos({ idMedico: Number(idMedico) })
+  if (!medico) throw new HttpError(404, 'Médico no encontrado')
+  return medico
+}
+
+/** Duración de la grilla, del turno pedido y de cada tipo de turno del médico. */
+function duracionesDelMedico(turnosConfig, duracionMinutos) {
+  const duracionGeneral = Number(turnosConfig?.config?.duracion_turno_estandar || 0)
+  const duracionDefault = Number.isFinite(duracionGeneral) && duracionGeneral > 0
+    ? duracionGeneral
+    : 30
+  const duracionPedida = Number.isInteger(Number(duracionMinutos)) && Number(duracionMinutos) > 0
+    ? Number(duracionMinutos)
+    : duracionDefault
+  const duracionPorTipo = new Map(
+    (Array.isArray(turnosConfig?.tipos) ? turnosConfig.tipos : []).map((tipo) => [
+      normalizeLabel(tipo?.nombre),
+      Number(tipo?.duracion_minutos || 0),
+    ])
+  )
+  return { duracionDefault, duracionPedida, duracionPorTipo }
+}
+
+/**
+ * Slots de un día del médico a partir de los datos ya cargados. Los turnos
+ * tomados son de todas sus clínicas: no puede estar en dos lugares a la vez.
+ */
+function calcularSlotsMedico({ franjas, extras, tomados, bloqueos, duraciones }) {
+  const { duracionDefault, duracionPedida, duracionPorTipo } = duraciones
+
+  const ocupados = tomados.map((row) => {
+    const start = toMinutes(normalizeHourKey(row.hora))
+    if (row.hora_fin) {
+      return { start, end: toMinutes(normalizeHourKey(row.hora_fin)) }
+    }
+    const fromType = duracionPorTipo.get(normalizeLabel(row.motivo_consulta))
+    const duration = Number.isInteger(fromType) && fromType > 0 ? fromType : duracionDefault
+    return { start, end: start + duration }
+  })
+
+  return armarSlots({
+    franjas: [
+      ...franjas,
+      ...extras.map((e) => ({ id_disponibilidad: null, hora_inicio: e.hora_inicio, hora_fin: e.hora_fin })),
+    ],
+    paso: duracionDefault,
+    duracionPedida,
+    ocupados,
+    bloqueos,
+  })
+}
+
 async function getDisponibilidad({ idMedico, idClinica, fecha, duracionMinutos = null }) {
   if (!idMedico || !idClinica || !fecha) {
     throw new HttpError(400, 'id_medico, id_clinica y fecha son obligatorios')
@@ -134,94 +165,108 @@ async function getDisponibilidad({ idMedico, idClinica, fecha, duracionMinutos =
     return getDisponibilidadCompartida({ idClinica, fecha, duracionMinutos })
   }
 
-  const turnosConfig = await medicosRepo.findTurnosConfigByMedico(Number(idMedico))
-  const duracionGeneral = Number(turnosConfig?.config?.duracion_turno_estandar || 0)
-  const duracionDefault = Number.isFinite(duracionGeneral) && duracionGeneral > 0
-    ? duracionGeneral
-    : 30
-  const requestedDuration = Number.isInteger(Number(duracionMinutos)) && Number(duracionMinutos) > 0
-    ? Number(duracionMinutos)
-    : duracionDefault
-  const durationByTypeName = new Map(
-    (Array.isArray(turnosConfig?.tipos) ? turnosConfig.tipos : []).map((tipo) => [
-      normalizeLabel(tipo?.nombre),
-      Number(tipo?.duracion_minutos || 0),
-    ])
-  )
-
+  const duraciones = duracionesDelMedico(await medicosRepo.findTurnosConfigByMedico(Number(idMedico)), duracionMinutos)
   const diaSemana = getDayOfWeek(fecha)
-  const franjas = await medicosRepo.findDisponibilidadByMedicoClinicaDia({
-    idMedico,
-    idClinica,
-    diaSemana,
-  })
+  const franjas = await medicosRepo.findDisponibilidadByMedicoClinicaDia({ idMedico, idClinica, diaSemana })
+  const extras = await medicosRepo.findExtraDisponibilidadByMedicoClinicaFecha({ idMedico, idClinica, fecha })
 
-  const extrasDelDia = await medicosRepo.findExtraDisponibilidadByMedicoClinicaFecha({
-    idMedico,
-    idClinica,
-    fecha,
-  })
-
-  const franjasTotales = [
-    ...franjas,
-    ...extrasDelDia.map((e) => ({
-      id_disponibilidad: null,
-      hora_inicio: e.hora_inicio,
-      hora_fin: e.hora_fin,
-      duracion_turno: duracionDefault,
-    })),
-  ]
-
-  if (franjasTotales.length === 0) {
-    return {
-      fecha,
-      dia_semana: diaSemana,
-      slots: [],
-    }
+  if (franjas.length === 0 && extras.length === 0) {
+    return { fecha, dia_semana: diaSemana, duracion_minutos: duraciones.duracionPedida, slots: [] }
   }
 
-  const tomadosRows = await medicosRepo.findTurnosTomados({ idMedico, fecha })
-  const ocupados = tomadosRows.map((row) => {
-    const start = toMinutes(normalizeHourKey(row.hora))
-    if (row.hora_fin) {
-      return { start, end: toMinutes(normalizeHourKey(row.hora_fin)) }
-    }
-    const fromType = durationByTypeName.get(normalizeLabel(row.motivo_consulta))
-    const duration = Number.isInteger(fromType) && fromType > 0 ? fromType : duracionDefault
-    return {
-      start,
-      end: start + duration,
-    }
-  })
-  const bloqueosRows = await medicosRepo.listBloqueosByMedico({ idMedico, idClinica })
-  const bloqueosDelDia = bloqueosRows.filter((b) => b.fecha === fecha)
-
-  const slots = []
-  for (const franja of franjasTotales) {
-    const inicio = toMinutes(String(franja.hora_inicio).slice(0, 5))
-    const fin = toMinutes(String(franja.hora_fin).slice(0, 5))
-    const duracion = duracionDefault
-
-    for (let t = inicio; t + duracion <= fin; t += duracion) {
-      const hora = toTime(t)
-      const bloqueado = isSlotBlocked({ slotHora: hora, bloqueos: bloqueosDelDia })
-      const slotStart = t
-      const slotEnd = t + requestedDuration
-      const overlaps = ocupados.some((o) => slotStart < o.end && o.start < slotEnd)
-      slots.push({
-        hora,
-        id_disponibilidad: franja.id_disponibilidad,
-        bloqueado,
-        libre: !overlaps && !bloqueado,
-      })
-    }
-  }
+  const tomados = await medicosRepo.findTurnosTomados({ idMedico, fecha })
+  const bloqueos = await medicosRepo.listBloqueosByMedico({ idMedico, idClinica })
 
   return {
     fecha,
     dia_semana: diaSemana,
-    slots,
+    duracion_minutos: duraciones.duracionPedida,
+    slots: calcularSlotsMedico({
+      franjas,
+      extras,
+      tomados,
+      bloqueos: bloqueos.filter((b) => b.fecha === fecha),
+      duraciones,
+    }),
   }
+}
+
+/**
+ * Verifica que un turno pedido entre en la agenda del médico: que empiece en
+ * un horario de la grilla, que no esté bloqueado ni ocupado y que termine
+ * dentro del horario de atención. Usa el mismo cálculo que ve el paciente.
+ *
+ * @returns {Promise<{ duracionMinutos: number }>} duración con la que se guarda el turno
+ */
+async function verificarHorarioDisponible({ idMedico, idClinica, fecha, hora, duracionMinutos = null }) {
+  const { slots, duracion_minutos: duracion } = await getDisponibilidad({ idMedico, idClinica, fecha, duracionMinutos })
+  const horaPedida = String(hora || '').slice(0, 5)
+  const slot = slots.find((s) => String(s.hora).slice(0, 5) === horaPedida)
+
+  if (!slot) {
+    throw new HttpError(409, 'Ese horario no está dentro de la agenda del médico', { code: 'FUERA_DE_AGENDA' })
+  }
+  if (slot.bloqueado) {
+    throw new HttpError(409, 'Ese horario está bloqueado por el médico', { code: 'HORARIO_BLOQUEADO' })
+  }
+  if (slot.excede_horario) {
+    throw new HttpError(
+      409,
+      `Un turno de ${duracion} minutos a las ${horaPedida} termina después del horario de atención`,
+      { code: 'EXCEDE_HORARIO' }
+    )
+  }
+  if (!slot.libre) {
+    throw new HttpError(409, 'Ese horario se superpone con otro turno existente', { code: 'TURNO_OVERLAP' })
+  }
+
+  return { duracionMinutos: duracion }
+}
+
+/**
+ * Estado de cada día de un rango ('disponible' | 'bloqueada' | 'sin-horarios')
+ * para pintar el calendario con una sola consulta, en vez de una por día.
+ */
+async function getResumenDisponibilidad({ idMedico, idClinica, desde, hasta, duracionMinutos = null }) {
+  if (!idMedico || !idClinica || !desde || !hasta) {
+    throw new HttpError(400, 'id_medico, id_clinica, desde y hasta son obligatorios')
+  }
+  validateDate(desde, 'desde')
+  validateDate(hasta, 'hasta')
+
+  const fechas = fechasEntre(desde, hasta)
+  if (fechas.length === 0) throw new HttpError(400, 'Rango de fechas invalido')
+  if (fechas.length > MAX_DIAS_RESUMEN) {
+    throw new HttpError(400, `El rango no puede superar ${MAX_DIAS_RESUMEN} días`)
+  }
+
+  const clinica = await medicosRepo.findClinicaCompartida(Number(idClinica))
+  if (clinica?.compartido) {
+    const { getResumenDisponibilidadCompartida } = require('../consultorios/consultorios.service')
+    return getResumenDisponibilidadCompartida({ idClinica, desde, hasta, fechas, duracionMinutos })
+  }
+
+  const duraciones = duracionesDelMedico(await medicosRepo.findTurnosConfigByMedico(Number(idMedico)), duracionMinutos)
+  const [franjasSemana, extras, tomados, bloqueos] = await Promise.all([
+    medicosRepo.findDisponibilidadByMedicoClinica({ idMedico, idClinica }),
+    medicosRepo.findExtraDisponibilidadByMedicoClinicaRango({ idMedico, idClinica, desde, hasta }),
+    medicosRepo.findTurnosTomadosRango({ idMedico, desde, hasta }),
+    medicosRepo.listBloqueosByMedico({ idMedico, idClinica }),
+  ])
+
+  const dias = fechas.map((fecha) => {
+    const diaSemana = getDayOfWeek(fecha)
+    const slots = calcularSlotsMedico({
+      franjas: franjasSemana.filter((f) => Number(f.dia_semana) === diaSemana),
+      extras: extras.filter((e) => e.fecha === fecha),
+      tomados: tomados.filter((t) => t.fecha === fecha),
+      bloqueos: bloqueos.filter((b) => b.fecha === fecha),
+      duraciones,
+    })
+    return { fecha, estado: estadoDelDia(slots) }
+  })
+
+  return { desde, hasta, dias }
 }
 
 async function getMyDisponibilidad({ idClinica, fecha, requesterIdUsuario, requesterRol }) {
@@ -737,7 +782,10 @@ async function updateMyRecetaSolicitudEstado({ idSolicitud, estado, requesterIdU
 
 module.exports = {
   listMedicos,
+  getMedicoPublico,
   getDisponibilidad,
+  getResumenDisponibilidad,
+  verificarHorarioDisponible,
   getMyDisponibilidad,
   getTurnosConfigByMedico,
   getMyTurnosConfig,

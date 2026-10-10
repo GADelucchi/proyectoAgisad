@@ -141,10 +141,6 @@ async function getFinanzas() {
   }
 }
 
-async function getUserSubscription(email) {
-  return adminRepository.findUserSubscriptionByEmail(email)
-}
-
 async function reactivateMembership(input) {
   const idUsuario = toNumber(input?.id_usuario)
   if (!idUsuario) {
@@ -191,6 +187,5 @@ module.exports = {
   listUsuarios,
   getUsuarioDetalle,
   getFinanzas,
-  getUserSubscription,
   reactivateMembership,
 }

@@ -23,8 +23,7 @@ export default function CancelarTurnoPage() {
 
     async function cargar() {
       try {
-        const medicosRows = await medicosApi.list('')
-        const medico = (Array.isArray(medicosRows) ? medicosRows : []).find((m) => String(m.id) === String(medicoId))
+        const medico = await medicosApi.getById(medicoId).catch(() => null)
         if (medico && medico.permiteTurnos === false) {
           if (!cancelled) {
             setError('Este médico tiene plan Inicial, por lo que no tiene módulo de turnos habilitado.')

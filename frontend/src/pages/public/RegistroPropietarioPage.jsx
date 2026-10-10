@@ -5,6 +5,7 @@ import PasswordInput from '../../components/ui/PasswordInput'
 import { authApi } from '../../services/auth.api'
 import { ApiError } from '../../services/apiClient'
 import './AuthPages.css'
+import { PASSWORD_HINT, validarPassword } from '../../utils/password'
 
 export default function RegistroPropietarioPage() {
   const navigate = useNavigate()
@@ -28,7 +29,8 @@ export default function RegistroPropietarioPage() {
   function validate() {
     if (!form.nombre || !form.apellido) return 'Completá nombre y apellido.'
     if (!form.email || !form.email.includes('@')) return 'Email inválido.'
-    if (!form.password || form.password.length < 6) return 'La contraseña debe tener al menos 6 caracteres.'
+    const errorPassword = validarPassword(form.password)
+    if (errorPassword) return errorPassword
     if (form.password !== form.confirmar) return 'Las contraseñas no coinciden.'
     if (!aceptaTyc) return 'Tenés que aceptar los términos y condiciones y la política de privacidad.'
     return null
@@ -100,7 +102,7 @@ export default function RegistroPropietarioPage() {
           <div className="auth-grid-2">
             <div className="form-group">
               <label className="form-label" htmlFor="password">Contraseña</label>
-              <PasswordInput id="password" name="password" value={form.password} onChange={handleChange} placeholder="Mínimo 6 caracteres" autoComplete="new-password" />
+              <PasswordInput id="password" name="password" value={form.password} onChange={handleChange} placeholder={PASSWORD_HINT} autoComplete="new-password" />
             </div>
             <div className="form-group">
               <label className="form-label" htmlFor="confirmar">Confirmar contraseña</label>

@@ -4,6 +4,7 @@ const turnosRepo = require('../turnos/turnos.repository')
 const { assertMedicoFeatureByMedicoId, assertOwnMembershipActive } = require('../membresias/membresias.service')
 const { validateTextField } = require('../../utils/validators')
 const { sendSolicitudConsultorioEmail, sendSolicitudResueltaEmail } = require('../../utils/mailer')
+const { toMinutes, getDayOfWeek, armarSlots, estadoDelDia } = require('../../utils/slots')
 
 const DAY_TO_INDEX = { Dom: 0, Lun: 1, Mar: 2, Mie: 3, Jue: 4, Vie: 5, Sab: 6 }
 
@@ -11,32 +12,6 @@ const DAY_TO_INDEX = { Dom: 0, Lun: 1, Mar: 2, Mie: 3, Jue: 4, Vie: 5, Sab: 6 }
 // El propietario "puro" no lo necesita: su plan ya es exactamente esta capacidad.
 const ADICIONAL_MONTO = 20000
 const ADICIONAL_MAX_CONSULTORIOS = 2
-
-function toMinutes(value) {
-  const [h, m] = String(value || '').slice(0, 5).split(':').map(Number)
-  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0)
-}
-
-function toTime(minutes) {
-  const h = String(Math.floor(minutes / 60)).padStart(2, '0')
-  const m = String(minutes % 60).padStart(2, '0')
-  return `${h}:${m}:00`
-}
-
-function getDayOfWeek(dateIso) {
-  return new Date(`${dateIso}T00:00:00`).getDay()
-}
-
-function isSlotBlocked({ slotHora, bloqueos }) {
-  const slot = String(slotHora).slice(0, 5)
-  for (const b of bloqueos) {
-    const from = b.hora_inicio ? String(b.hora_inicio).slice(0, 5) : null
-    const to = b.hora_fin ? String(b.hora_fin).slice(0, 5) : null
-    if (!from || !to) return true
-    if (slot >= from && slot < to) return true
-  }
-  return false
-}
 
 /**
  * Resuelve quién es el dueño del consultorio: puede ser un propietario (rol
@@ -239,83 +214,85 @@ async function guardarDisponibilidad({ idClinica, input, requesterIdUsuario, req
 }
 
 /**
- * Slots libres de un consultorio compartido: la ocupación se calcula con los
- * turnos de TODOS los médicos que lo usan, no solo los de uno.
+ * Slots de un día de un consultorio compartido. La ocupación se calcula con
+ * los turnos de TODOS los médicos que lo usan, no solo los de uno.
  */
+/** Paso de la grilla (lo define el dueño) y duración del turno pedido. */
+function duracionesCompartido(franjas, duracionMinutos) {
+  const paso = Number(franjas[0]?.duracion_turno) > 0 ? Number(franjas[0].duracion_turno) : 30
+  const duracionPedida = Number.isInteger(Number(duracionMinutos)) && Number(duracionMinutos) > 0
+    ? Number(duracionMinutos)
+    : paso
+  return { paso, duracionPedida }
+}
+
+function calcularSlotsCompartido({ franjas, extras, bloqueos, tomados, duracionMinutos }) {
+  const { paso, duracionPedida } = duracionesCompartido(franjas, duracionMinutos)
+
+  const ocupados = tomados.map((row) => {
+    const start = toMinutes(row.hora)
+    return { start, end: row.hora_fin ? toMinutes(row.hora_fin) : start + paso }
+  })
+
+  return armarSlots({
+    franjas: [
+      ...franjas,
+      ...extras.map((e) => ({ id_disponibilidad: null, hora_inicio: e.hora_inicio, hora_fin: e.hora_fin })),
+    ],
+    paso,
+    duracionPedida,
+    ocupados,
+    bloqueos,
+  })
+}
+
 async function getDisponibilidadCompartida({ idClinica, fecha, duracionMinutos = null }) {
   if (!idClinica || !fecha) {
     throw new HttpError(400, 'id_clinica y fecha son obligatorios')
   }
 
   const diaSemana = getDayOfWeek(fecha)
-  const franjas = await repo.findDisponibilidadByClinicaDia({
-    idClinica: Number(idClinica),
-    diaSemana,
-  })
-  const extras = await repo.findExcepcionesByClinicaFecha({
-    idClinica: Number(idClinica),
-    fecha,
-    tipo: 'extra',
-  })
-  const bloqueos = await repo.findExcepcionesByClinicaFecha({
-    idClinica: Number(idClinica),
-    fecha,
-    tipo: 'bloqueo',
-  })
+  const franjas = await repo.findDisponibilidadByClinicaDia({ idClinica: Number(idClinica), diaSemana })
+  const extras = await repo.findExcepcionesByClinicaFecha({ idClinica: Number(idClinica), fecha, tipo: 'extra' })
+  const bloqueos = await repo.findExcepcionesByClinicaFecha({ idClinica: Number(idClinica), fecha, tipo: 'bloqueo' })
 
-  const duracionDefault = Number(franjas[0]?.duracion_turno) > 0
-    ? Number(franjas[0].duracion_turno)
-    : 30
-  const requestedDuration = Number.isInteger(Number(duracionMinutos)) && Number(duracionMinutos) > 0
-    ? Number(duracionMinutos)
-    : duracionDefault
+  const { duracionPedida } = duracionesCompartido(franjas, duracionMinutos)
 
-  const franjasTotales = [
-    ...franjas,
-    ...extras.map((e) => ({
-      id_disponibilidad: null,
-      hora_inicio: e.hora_inicio,
-      hora_fin: e.hora_fin,
-      duracion_turno: duracionDefault,
-    })),
-  ]
-
-  if (franjasTotales.length === 0) {
-    return { fecha, dia_semana: diaSemana, slots: [] }
+  if (franjas.length === 0 && extras.length === 0) {
+    return { fecha, dia_semana: diaSemana, duracion_minutos: duracionPedida, slots: [] }
   }
 
-  const tomados = await turnosRepo.findTurnosTomadosPorClinica({
-    idClinica: Number(idClinica),
+  const tomados = await turnosRepo.findTurnosTomadosPorClinica({ idClinica: Number(idClinica), fecha })
+
+  return {
     fecha,
-  })
-  const ocupados = tomados.map((row) => {
-    const start = toMinutes(row.hora)
-    return {
-      start,
-      end: row.hora_fin ? toMinutes(row.hora_fin) : start + duracionDefault,
-    }
-  })
-
-  const slots = []
-  for (const franja of franjasTotales) {
-    const inicio = toMinutes(String(franja.hora_inicio).slice(0, 5))
-    const fin = toMinutes(String(franja.hora_fin).slice(0, 5))
-
-    for (let t = inicio; t + duracionDefault <= fin; t += duracionDefault) {
-      const hora = toTime(t)
-      const bloqueado = isSlotBlocked({ slotHora: hora, bloqueos })
-      const slotEnd = t + requestedDuration
-      const overlaps = ocupados.some((o) => t < o.end && o.start < slotEnd)
-      slots.push({
-        hora,
-        id_disponibilidad: franja.id_disponibilidad,
-        bloqueado,
-        libre: !overlaps && !bloqueado,
-      })
-    }
+    dia_semana: diaSemana,
+    duracion_minutos: duracionPedida,
+    slots: calcularSlotsCompartido({ franjas, extras, bloqueos, tomados, duracionMinutos }),
   }
+}
 
-  return { fecha, dia_semana: diaSemana, slots }
+/** Resumen por día de un rango (ver medicos.service getResumenDisponibilidad). */
+async function getResumenDisponibilidadCompartida({ idClinica, desde, hasta, fechas, duracionMinutos = null }) {
+  const [{ rangos, excepciones }, tomados] = await Promise.all([
+    repo.listDisponibilidadByClinica(Number(idClinica)),
+    turnosRepo.findTurnosTomadosPorClinicaRango({ idClinica: Number(idClinica), desde, hasta }),
+  ])
+
+  const dias = fechas.map((fecha) => {
+    const diaSemana = getDayOfWeek(fecha)
+    const delDia = excepciones.filter((e) => e.fecha === fecha)
+    const slots = calcularSlotsCompartido({
+      franjas: rangos.filter((r) => Number(r.dia_semana) === diaSemana),
+      extras: delDia.filter((e) => e.tipo === 'extra'),
+      bloqueos: delDia.filter((e) => e.tipo === 'bloqueo'),
+      tomados: tomados.filter((t) => t.fecha === fecha),
+      duracionMinutos,
+    })
+    return { fecha, estado: estadoDelDia(slots) }
+  })
+
+  return { desde, hasta, dias }
 }
 
 async function crearSolicitud({ idClinica, mensaje, requesterIdUsuario, requesterRol }) {
@@ -538,6 +515,7 @@ module.exports = {
   getDisponibilidadConfig,
   guardarDisponibilidad,
   getDisponibilidadCompartida,
+  getResumenDisponibilidadCompartida,
   crearSolicitud,
   listSolicitudesRecibidas,
   listMisSolicitudes,

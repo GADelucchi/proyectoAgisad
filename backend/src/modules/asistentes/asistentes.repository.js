@@ -53,7 +53,12 @@ async function findAsistenteById(idAsistente) {
 /**
  * Inserta o actualiza los permisos de un asistente para un médico.
  */
-async function upsertPermisos(idAsistente, idMedico, permisos) {
+/** Ejecuta en la conexión de una transacción si se la pasan; si no, en el pool. */
+function ejecutar(conn, sql, params) {
+  return conn ? conn.execute(sql, params) : query(sql, params)
+}
+
+async function upsertPermisos(idAsistente, idMedico, permisos, conn = null) {
   const {
     agenda = 1,
     pacientes = 0,
@@ -63,7 +68,8 @@ async function upsertPermisos(idAsistente, idMedico, permisos) {
     bloqueado = 0,
   } = permisos
 
-  await query(
+  await ejecutar(
+    conn,
     `INSERT INTO asistente_permisos
        (id_asistente, id_medico, agenda, pacientes, mensajes, recetas, configuracion, bloqueado)
      VALUES (:idAsistente, :idMedico, :agenda, :pacientes, :mensajes, :recetas, :configuracion, :bloqueado)
@@ -76,17 +82,6 @@ async function upsertPermisos(idAsistente, idMedico, permisos) {
        bloqueado     = VALUES(bloqueado)`,
     { idAsistente, idMedico, agenda, pacientes, mensajes, recetas, configuracion, bloqueado }
   )
-}
-
-async function findMedicoIdByUserId(idUsuario) {
-  const rows = await query(
-    `SELECT id_medico
-     FROM medicos
-     WHERE id_usuario = :idUsuario
-     LIMIT 1`,
-    { idUsuario }
-  )
-  return rows[0]?.id_medico || null
 }
 
 async function findGerenteIdByUserId(idUsuario) {
@@ -131,27 +126,27 @@ async function findAsistenteIdByUserId(idUsuario) {
   return rows[0]?.id_asistente || null
 }
 
-async function hasAsistenteAccessToMedico({ idUsuario, idMedico }) {
-  const rows = await query(
-    `SELECT 1 AS ok
-     FROM asistentes a
-     INNER JOIN asistente_permisos ap ON ap.id_asistente = a.id_asistente
-     WHERE a.id_usuario = :idUsuario
-       AND ap.id_medico = :idMedico
-       AND ap.bloqueado = 0
-     LIMIT 1`,
-    { idUsuario, idMedico }
-  )
-  return Boolean(rows[0])
-}
-
-async function insertAsistenteClinica(idAsistente, idClinica) {
-  await query(
+async function insertAsistenteClinica(idAsistente, idClinica, conn = null) {
+  await ejecutar(
+    conn,
     `INSERT INTO asistente_clinicas (id_asistente, id_clinica)
      VALUES (:idAsistente, :idClinica)
      ON DUPLICATE KEY UPDATE activo = 1`,
     { idAsistente, idClinica }
   )
+}
+
+/** ¿El médico tiene vinculado a este asistente? */
+async function asistenteVinculadoAMedico({ idAsistente, idMedico }) {
+  const rows = await query(
+    `SELECT 1 AS ok
+     FROM asistente_permisos
+     WHERE id_asistente = :idAsistente
+       AND id_medico = :idMedico
+     LIMIT 1`,
+    { idAsistente, idMedico }
+  )
+  return Boolean(rows[0])
 }
 
 async function findAsistenteAccessByUserId(idUsuario) {
@@ -179,12 +174,11 @@ module.exports = {
   listAsistentesByMedico,
   findAsistenteById,
   upsertPermisos,
-  findMedicoIdByUserId,
   findGerenteIdByUserId,
   findClinicasByMedicoId,
   findClinicasByGerenteId,
   insertAsistenteClinica,
+  asistenteVinculadoAMedico,
   findAsistenteIdByUserId,
-  hasAsistenteAccessToMedico,
   findAsistenteAccessByUserId,
 }

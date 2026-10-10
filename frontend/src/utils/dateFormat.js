@@ -31,24 +31,6 @@ export function formatDateDdMmYyyy(date) {
   }).format(value)
 }
 
-export function formatDateLabel(date) {
-  if (!date) return ''
-  return formatDateDdMmYyyy(date)
-}
-
-export function formatDateShort(date) {
-  const value = parseAsDate(date)
-  if (!value) return ''
-  if (!APP_TIMEZONE || !APP_LOCALE) {
-    throw new Error('Faltan VITE_APP_TIMEZONE o VITE_APP_LOCALE en el entorno del frontend')
-  }
-  return new Intl.DateTimeFormat(APP_LOCALE, {
-    day: '2-digit',
-    month: '2-digit',
-    timeZone: APP_TIMEZONE,
-  }).format(value)
-}
-
 export function formatTime24h(timeOrDate) {
   if (!timeOrDate) return ''
 

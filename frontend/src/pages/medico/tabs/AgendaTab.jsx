@@ -44,6 +44,22 @@ function sumarMinutos(hora, minutos = 30) {
   return toTime(base + minutos).slice(0, 5)
 }
 
+/** Rangos del día unidos cuando se pisan o son contiguos (9-11 y 11-13 es atención continua). */
+function unirRangos(ranges) {
+  const intervalos = ranges
+    .map((r) => ({ inicio: toMinutes(r.inicio || r.desde), fin: toMinutes(r.fin || r.hasta) }))
+    .filter((i) => Number.isFinite(i.inicio) && Number.isFinite(i.fin) && i.fin > i.inicio)
+    .sort((a, b) => a.inicio - b.inicio)
+
+  const unidos = []
+  for (const intervalo of intervalos) {
+    const ultimo = unidos[unidos.length - 1]
+    if (ultimo && intervalo.inicio <= ultimo.fin) ultimo.fin = Math.max(ultimo.fin, intervalo.fin)
+    else unidos.push({ ...intervalo })
+  }
+  return unidos
+}
+
 function buildSlotsForDate(consultorio, date, duracionEstandar = 30) {
   const iso = fechaStr(date)
   const slots = []
@@ -63,6 +79,7 @@ function buildSlotsForDate(consultorio, date, duracionEstandar = 30) {
     : []
 
   const ranges = [...weeklyRanges, ...uniqueRanges]
+  const atencion = unirRangos(ranges)
 
   for (const rango of ranges) {
     const start = toMinutes(rango.inicio || rango.desde)
@@ -74,6 +91,9 @@ function buildSlotsForDate(consultorio, date, duracionEstandar = 30) {
       slots.push({
         hora: toTime(minute),
         duracion: duration,
+        // Hasta cuándo atiende sin cortes desde este slot: un tipo de turno más
+        // largo que eso no se puede agendar acá (el backend también lo rechaza).
+        finAtencion: atencion.find((i) => minute >= i.inicio && minute < i.fin)?.fin ?? end,
       })
     }
   }
@@ -362,11 +382,11 @@ export default function AgendaTab({ doctorId, readOnly = false, onResumenDia }) 
     }
   }
 
-  async function abrirAgendar({ idClinica, fechaIso, hora, duracion }) {
+  async function abrirAgendar({ idClinica, fechaIso, hora, duracion, finAtencion }) {
     setMensajeAccion('')
     setFormTurno({ id_paciente: '', motivo: '', id_tipo_turno: '' })
     setBusquedaPaciente('')
-    setSlotAgendando({ idClinica, fechaIso, hora: horaKey(hora), duracion: duracion || 30 })
+    setSlotAgendando({ idClinica, fechaIso, hora: horaKey(hora), duracion: duracion || 30, finAtencion: finAtencion ?? Infinity })
 
     if (pacientes.length > 0) return
 
@@ -641,7 +661,7 @@ export default function AgendaTab({ doctorId, readOnly = false, onResumenDia }) 
                                 <>
                                   <button
                                     className="agenda-accion-btn agendar"
-                                    onClick={() => abrirAgendar({ idClinica: c.id, fechaIso: key, hora: slot.hora, duracion: slot.duracion })}
+                                    onClick={() => abrirAgendar({ idClinica: c.id, fechaIso: key, hora: slot.hora, duracion: slot.duracion, finAtencion: slot.finAtencion })}
                                   >
                                     + Agendar
                                   </button>
@@ -728,11 +748,14 @@ export default function AgendaTab({ doctorId, readOnly = false, onResumenDia }) 
                                   onChange={(e) => setFormTurno({ ...formTurno, id_tipo_turno: e.target.value })}
                                 >
                                   <option value="">Tipo de turno (opcional)</option>
-                                  {tiposTurno.map((t) => (
-                                    <option key={t.id_tipo_turno} value={String(t.id_tipo_turno)}>
-                                      {`${t.nombre} · ${t.duracion_minutos} min`}
-                                    </option>
-                                  ))}
+                                  {tiposTurno.map((t) => {
+                                    const noEntra = toMinutes(slotAgendando.hora) + Number(t.duracion_minutos) > slotAgendando.finAtencion
+                                    return (
+                                      <option key={t.id_tipo_turno} value={String(t.id_tipo_turno)} disabled={noEntra}>
+                                        {`${t.nombre} · ${t.duracion_minutos} min${noEntra ? ' (no entra antes del cierre)' : ''}`}
+                                      </option>
+                                    )
+                                  })}
                                 </select>
                               )}
 

@@ -6,6 +6,7 @@ import { ApiError, STORAGE_KEYS } from '../../services/apiClient'
 import Button from '../../components/ui/Button'
 import PasswordInput from '../../components/ui/PasswordInput'
 import './AuthPages.css'
+import { PASSWORD_HINT, validarPassword } from '../../utils/password'
 
 const ESPECIALIDADES = [
   'Clínica Médica', 'Pediatría', 'Cardiología', 'Dermatología', 'Ginecología',
@@ -75,7 +76,8 @@ function InvitacionRegistroForm({ invitacion, token, onAceptada }) {
     if (!form.dni || !/^\d{7,8}$/.test(form.dni)) return 'DNI inválido (7 u 8 dígitos).'
     if (!form.matricula) return 'Ingresá la matrícula.'
     if (!form.provincia || !form.ciudad) return 'Ingresá provincia y ciudad.'
-    if (!form.password || form.password.length < 6) return 'La contraseña debe tener al menos 6 caracteres.'
+    const errorPassword = validarPassword(form.password)
+    if (errorPassword) return errorPassword
     if (form.password !== form.confirmar) return 'Las contraseñas no coinciden.'
     if (!aceptaTyc) return 'Tenés que aceptar los términos y condiciones y la política de privacidad.'
     return null
@@ -159,7 +161,7 @@ function InvitacionRegistroForm({ invitacion, token, onAceptada }) {
       <div className="auth-grid-2">
         <div className="form-group">
           <label className="form-label" htmlFor="password">Contraseña</label>
-          <PasswordInput id="password" name="password" value={form.password} onChange={handleChange} placeholder="Mínimo 6 caracteres" autoComplete="new-password" />
+          <PasswordInput id="password" name="password" value={form.password} onChange={handleChange} placeholder={PASSWORD_HINT} autoComplete="new-password" />
         </div>
         <div className="form-group">
           <label className="form-label" htmlFor="confirmar">Confirmar contraseña</label>

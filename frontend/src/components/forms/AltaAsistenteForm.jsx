@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Button from '../ui/Button'
+import { PASSWORD_HINT, validarPassword } from '../../utils/password'
 
 const DEFAULT_PERMISOS = {
   agenda: true,
@@ -69,7 +70,8 @@ export default function AltaAsistenteForm({
   function validate() {
     if (!form.nombre.trim() || !form.apellido.trim()) return 'Completá nombre y apellido.'
     if (!form.email.includes('@')) return 'Email inválido.'
-    if (!form.password || form.password.length < 6) return 'La contraseña debe tener al menos 6 caracteres.'
+    const errorPassword = validarPassword(form.password)
+    if (errorPassword) return errorPassword
     if (!allowManualClinicIds && clinicOptions.length > 0 && selectedClinicIds.length === 0) return 'Seleccioná al menos una clínica.'
     if (allowManualClinicIds && !normalizeClinicIds(form.clinicIdsText).length) return 'Ingresá al menos un ID de clínica.'
     return null
@@ -147,7 +149,7 @@ export default function AltaAsistenteForm({
         </div>
         <div className="form-group">
           <label className="form-label" htmlFor="asistentePassword">Contraseña</label>
-          <input id="asistentePassword" name="password" type="password" className="form-input" value={form.password} onChange={handleChange} placeholder="Mínimo 6 caracteres" />
+          <input id="asistentePassword" name="password" type="password" className="form-input" value={form.password} onChange={handleChange} placeholder={PASSWORD_HINT} />
         </div>
       </div>
 

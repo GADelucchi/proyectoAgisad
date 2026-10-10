@@ -103,7 +103,8 @@ function mapTipoTurno(row, index) {
 export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange }) {
   const { usuario } = useAuth()
   const navigate = useNavigate()
-  const doctorId = String(usuario?.idUsuario || usuario?.id || '')
+  // Solo indica que hay sesión: el backend resuelve el id_medico a partir del token.
+  const idUsuario = String(usuario?.idUsuario || usuario?.id || '')
   const permiteAsistentes = Boolean(usuario?.membresia?.permite_asistentes)
 
   const planNombre = usuario?.membresia?.plan_nombre || usuario?.membresia?.plan_codigo || 'Sin plan'
@@ -132,12 +133,12 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
   const [bloqueoForm, setBloqueoForm] = useState(bloqueoFormBase([]))
 
   async function loadData() {
-    if (!doctorId) return
+    if (!idUsuario) return
 
     const [clinicasRows, bloqueosRows, asistentesRows, tyc, turnosConfig] = await Promise.all([
       permiteTurnos ? medicosApi.listMyClinicas() : Promise.resolve([]),
       permiteTurnos ? medicosApi.listMyBloqueos() : Promise.resolve([]),
-      permiteAsistentes ? asistentesApi.listByMedico(doctorId).catch(() => []) : Promise.resolve([]),
+      permiteAsistentes ? asistentesApi.listByMedico().catch(() => []) : Promise.resolve([]),
       medicosApi.getMyTyc().catch(() => null),
       permiteTurnos ? medicosApi.getMyTurnosConfig().catch(() => null) : Promise.resolve(null),
     ])
@@ -185,7 +186,7 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
       setNotifCancelacion(true)
       setAdicional(null)
     })
-  }, [doctorId, permiteAsistentes, permiteTurnos])
+  }, [idUsuario, permiteAsistentes, permiteTurnos])
 
   function solicitarCambioMembresia() {
     setEstadoCrud('Pronto vas a poder cambiar tu membresia desde este panel. Contacta administracion para gestion inmediata.')
@@ -208,7 +209,7 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
   }
 
   async function patchAsistentePermisos(idAsistente, permisos) {
-    await asistentesApi.patchPermisos(idAsistente, doctorId, permisos)
+    await asistentesApi.patchPermisos(idAsistente, permisos)
     setAsistentes((prev) =>
       prev.map((a) =>
         a.id === idAsistente
@@ -235,11 +236,8 @@ export default function ConfiguracionTab({ permiteTurnos = true, onConfigChange 
   }
 
   async function crearAsistente(payload) {
-    const response = await authApi.registerAsistente({
-      ...payload,
-      id_medico: Number(doctorId),
-      clinic_ids: payload.clinic_ids,
-    })
+    // El backend vincula el asistente al médico autenticado.
+    const response = await authApi.registerAsistente(payload)
 
     await loadData()
     return response

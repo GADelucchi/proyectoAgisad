@@ -31,15 +31,6 @@ async function getFinanzas(req, res, next) {
   }
 }
 
-async function getUserSubscription(req, res, next) {
-  try {
-    const data = await adminService.getUserSubscription(req.params.email)
-    res.json(data)
-  } catch (err) {
-    next(err)
-  }
-}
-
 async function reactivateMembership(req, res, next) {
   try {
     const data = await adminService.reactivateMembership(req.body)
@@ -56,6 +47,5 @@ module.exports = {
   listUsuarios,
   getUsuarioDetalle,
   getFinanzas,
-  getUserSubscription,
   reactivateMembership,
 }

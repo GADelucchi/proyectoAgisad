@@ -79,12 +79,7 @@ const env = {
   JWT_SECRET: requiredString('JWT_SECRET'),
   JWT_EXPIRES_IN: requiredString('JWT_EXPIRES_IN'),
   FRONTEND_URL: requiredString('FRONTEND_URL'),
-  // Nombre convencional de Resend; si no está, se cae a MAIL_PASSWORD.
   RESEND_API_KEY: process.env.RESEND_API_KEY,
-  MAIL_HOST: process.env.MAIL_HOST,
-  MAIL_PORT: asNumber(process.env.MAIL_PORT, 'MAIL_PORT'),
-  MAIL_USER: process.env.MAIL_USER,
-  MAIL_PASSWORD: process.env.MAIL_PASSWORD,
   MAIL_FROM: process.env.MAIL_FROM,
   MAIL_FROM_RECETAS: process.env.MAIL_FROM_RECETAS || process.env.MAIL_FROM,
   MAIL_FROM_TURNOS: process.env.MAIL_FROM_TURNOS || process.env.MAIL_FROM,

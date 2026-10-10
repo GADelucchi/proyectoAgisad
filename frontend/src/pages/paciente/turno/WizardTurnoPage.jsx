@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import Button from '../../../components/ui/Button'
@@ -73,20 +73,20 @@ export default function WizardTurnoPage() {
   const [sel, setSel] = useState({ consultorio: null, tipo: null, fecha: null, horario: null, idDisponibilidad: null })
   const [permiteTurnos, setPermiteTurnos] = useState(true)
   const [tiposConsulta, setTiposConsulta] = useState([])
+  const resumenPorMes = useRef(new Map())
 
   useEffect(() => {
     let cancelled = false
 
     async function loadInitial() {
       try {
-        const [medicosRows, clinicasRows, turnosConfig] = await Promise.all([
-          medicosApi.list(''),
+        const [found, clinicasRows, turnosConfig] = await Promise.all([
+          medicosApi.getById(medicoId).catch(() => null),
           medicosApi.listClinicasByMedico(medicoId),
           medicosApi.getTurnosConfigByMedico(medicoId).catch(() => null),
         ])
 
         if (cancelled) return
-        const found = (Array.isArray(medicosRows) ? medicosRows : []).find((m) => String(m.id) === String(medicoId))
         if (found) {
           setMedico({ nombre: found.nombre })
           setPermiteTurnos(found.permiteTurnos !== false)
@@ -149,11 +149,16 @@ export default function WizardTurnoPage() {
     }
   }, [medicoId, sel.consultorio, sel.fecha, sel.tipo])
 
+  // Estado de los días del mes: una sola request por mes (antes, una por día),
+  // y se recuerda mientras el paciente está en el wizard para no repetirla al
+  // volver a un mes o a un tipo de consulta ya vistos.
   useEffect(() => {
     let cancelled = false
 
     async function loadMonthStates() {
-      if (!sel.consultorio) {
+      // El calendario recién se muestra después de elegir el tipo de consulta,
+      // y su duración cambia qué días quedan libres.
+      if (!sel.consultorio || !sel.tipo) {
         setCalendarStateByDate({})
         return
       }
@@ -162,40 +167,29 @@ export default function WizardTurnoPage() {
       const month = calendarMonth.getMonth()
       const monthStart = new Date(year, month, 1)
       const monthEnd = new Date(year, month + 1, 0)
-      const from = monthStart < today ? today : monthStart
+      const desde = toIsoDate(monthStart < today ? today : monthStart)
+      const hasta = toIsoDate(monthEnd)
+      const duracionMinutos = sel.tipo?.duracion || null
+      const clave = `${sel.consultorio.id}|${duracionMinutos}|${desde}|${hasta}`
 
-      const dates = []
-      for (let d = from.getDate(); d <= monthEnd.getDate(); d += 1) {
-        dates.push(new Date(year, month, d))
+      const guardado = resumenPorMes.current.get(clave)
+      if (guardado) {
+        setCalendarStateByDate(guardado)
+        return
       }
 
       setLoadingMonth(true)
       try {
-        const rows = await Promise.all(
-          dates.map(async (date) => {
-            const fecha = toIsoDate(date)
-            const res = await medicosApi.getDisponibilidad({
-              idMedico: medicoId,
-              idClinica: sel.consultorio.id,
-              fecha,
-              duracionMinutos: sel.tipo?.duracion || null,
-            })
-
-            const daySlots = Array.isArray(res?.slots) ? res.slots : []
-            const hasLibre = daySlots.some((slot) => Boolean(slot.libre))
-            const hasBloqueo = daySlots.some((slot) => Boolean(slot.bloqueado))
-
-            let status = 'sin-horarios'
-            if (hasLibre) status = 'disponible'
-            else if (hasBloqueo) status = 'bloqueada'
-
-            return [fecha, status]
-          }),
-        )
-
-        if (!cancelled) {
-          setCalendarStateByDate(Object.fromEntries(rows))
-        }
+        const res = await medicosApi.getResumenDisponibilidad({
+          idMedico: medicoId,
+          idClinica: sel.consultorio.id,
+          desde,
+          hasta,
+          duracionMinutos,
+        })
+        const estados = Object.fromEntries((Array.isArray(res?.dias) ? res.dias : []).map((d) => [d.fecha, d.estado]))
+        resumenPorMes.current.set(clave, estados)
+        if (!cancelled) setCalendarStateByDate(estados)
       } catch {
         if (!cancelled) setCalendarStateByDate({})
       } finally {
@@ -374,14 +368,17 @@ export default function WizardTurnoPage() {
                 <div className="wizard-horarios">
                     {slots.map((slot) => {
                       const isBlocked = Boolean(slot.bloqueado)
-                      const isOccupied = !slot.libre && !isBlocked
+                      // El turno elegido no termina antes de que cierre la agenda del médico.
+                      const excede = Boolean(slot.excede_horario) && !isBlocked
+                      const isOccupied = !slot.libre && !isBlocked && !excede
 
                       return (
                         <button
                           key={`${slot.id_disponibilidad}-${slot.hora}`}
                           type="button"
-                          className={`wizard-horario-btn ${sel.horario === slot.hora ? 'selected' : ''} ${isBlocked ? 'bloqueado' : ''} ${isOccupied ? 'ocupado' : ''}`}
-                          disabled={isBlocked || isOccupied}
+                          className={`wizard-horario-btn ${sel.horario === slot.hora ? 'selected' : ''} ${isBlocked ? 'bloqueado' : ''} ${isOccupied || excede ? 'ocupado' : ''}`}
+                          disabled={!slot.libre}
+                          title={excede ? `Un turno de ${sel.tipo?.duracion} minutos no termina antes del cierre de la agenda` : undefined}
                           onClick={() => setSel((prev) => ({ ...prev, horario: slot.hora, idDisponibilidad: slot.id_disponibilidad }))}
                         >
                           <span className="wizard-horario-texto">{formatTime24h(slot.hora)}</span>

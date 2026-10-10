@@ -27,6 +27,30 @@ async function getDisponibilidad(req, res, next) {
   }
 }
 
+async function getMedico(req, res, next) {
+  try {
+    const data = await medicosService.getMedicoPublico({ idMedico: Number(req.params.id_medico) })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function getResumenDisponibilidad(req, res, next) {
+  try {
+    const data = await medicosService.getResumenDisponibilidad({
+      idMedico: Number(req.params.id_medico),
+      idClinica: Number(req.query.id_clinica),
+      desde: req.query.desde,
+      hasta: req.query.hasta,
+      duracionMinutos: req.query.duracion_minutos ? Number(req.query.duracion_minutos) : null,
+    })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
 async function getMyDisponibilidad(req, res, next) {
   try {
     const data = await medicosService.getMyDisponibilidad({
@@ -271,7 +295,9 @@ async function updateMyRecetaSolicitudEstado(req, res, next) {
 
 module.exports = {
   listMedicos,
+  getMedico,
   getDisponibilidad,
+  getResumenDisponibilidad,
   getMyDisponibilidad,
   getTurnosConfigByMedico,
   getMyTurnosConfig,

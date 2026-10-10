@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs')
 const HttpError = require('../../utils/httpError')
 const { query } = require('../../db/query')
 const { sendPasswordResetEmail } = require('../../utils/mailer')
+const { validatePassword } = require('../../utils/validators')
 const {
   createToken,
   findValidToken,
@@ -13,16 +14,6 @@ const TOKEN_VIGENCIA_MINUTOS = 60
 
 function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex')
-}
-
-function isStrongPassword(value) {
-  if (typeof value !== 'string') return false
-  if (value.length < 8) return false
-
-  const hasLetter = /[A-Za-z]/.test(value)
-  const hasNumber = /\d/.test(value)
-
-  return hasLetter && hasNumber
 }
 
 /**
@@ -54,12 +45,7 @@ async function requestPasswordReset(email) {
  */
 async function resetPassword(rawToken, newPassword) {
   if (!rawToken) throw new HttpError(400, 'Token requerido')
-  if (!isStrongPassword(newPassword)) {
-    throw new HttpError(
-      400,
-      'La contraseña debe tener al menos 8 caracteres e incluir letras y números'
-    )
-  }
+  validatePassword(newPassword)
 
   const tokenHash = sha256(rawToken)
   const record = await findValidToken(tokenHash)

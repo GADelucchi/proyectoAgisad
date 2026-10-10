@@ -270,31 +270,6 @@ async function listMensajesByPaciente(idPaciente, idMedico = null) {
   )
 }
 
-async function findMedicoIdByUserId(idUsuario) {
-  const rows = await query(
-    `SELECT id_medico
-     FROM medicos
-     WHERE id_usuario = :idUsuario
-     LIMIT 1`,
-    { idUsuario }
-  )
-  return rows[0]?.id_medico || null
-}
-
-async function hasAsistenteAccessToMedico({ idUsuario, idMedico }) {
-  const rows = await query(
-    `SELECT 1 AS ok
-     FROM asistentes a
-     INNER JOIN asistente_permisos ap ON ap.id_asistente = a.id_asistente
-     WHERE a.id_usuario = :idUsuario
-       AND ap.id_medico = :idMedico
-       AND ap.bloqueado = 0
-     LIMIT 1`,
-    { idUsuario, idMedico }
-  )
-  return Boolean(rows[0])
-}
-
 async function findActiveTycByMedico(idMedico) {
   const rows = await query(
     `SELECT id_tyc, id_medico, version, texto, activo, creado_en
@@ -354,19 +329,6 @@ async function findPrimeraClinicaByMedico(idMedico) {
   return rows[0]?.id_clinica || null
 }
 
-async function medicoTieneClinica({ idMedico, idClinica }) {
-  const rows = await query(
-    `SELECT 1 AS ok
-     FROM medico_clinicas
-     WHERE id_medico = :idMedico
-       AND id_clinica = :idClinica
-       AND activo = 1
-     LIMIT 1`,
-    { idMedico, idClinica }
-  )
-  return Boolean(rows[0])
-}
-
 /**
  * Crea o reactiva el vínculo paciente ↔ médico para que aparezca en su listado.
  */
@@ -391,14 +353,11 @@ module.exports = {
   existsObraSocial,
   listRecetasByPaciente,
   listMensajesByPaciente,
-  findMedicoIdByUserId,
-  hasAsistenteAccessToMedico,
   findActiveTycByMedico,
   hasPacienteAcceptedTyc,
   insertPacienteTycAceptacion,
   findPacienteByDni,
   findPrimeraClinicaByMedico,
-  medicoTieneClinica,
   upsertPacienteVinculo,
   ensureObraSocialByNombre,
   pacienteVinculadoAMedico,

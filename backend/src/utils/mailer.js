@@ -1,9 +1,6 @@
 const { Resend } = require('resend')
 const env = require('../config/env')
 
-// La API key puede venir con el nombre convencional de Resend o reusando el que
-// ya se usaba para SMTP. Se aceptan los dos para no depender de cómo quedó
-// nombrada la variable en cada entorno.
 const API_KEY = env.RESEND_API_KEY || null
 
 function apiKeyValida(value) {
@@ -37,7 +34,7 @@ function resolverModo() {
   if (!API_KEY) {
     return {
       modo: 'roto',
-      motivo: 'No hay API key: falta RESEND_API_KEY (o MAIL_PASSWORD) en el entorno',
+      motivo: 'No hay API key: falta RESEND_API_KEY en el entorno',
     }
   }
 

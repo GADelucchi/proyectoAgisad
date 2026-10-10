@@ -12,14 +12,11 @@ const {
   existsObraSocial,
   listRecetasByPaciente,
   listMensajesByPaciente,
-  findMedicoIdByUserId,
-  hasAsistenteAccessToMedico,
   findActiveTycByMedico,
   hasPacienteAcceptedTyc,
   insertPacienteTycAceptacion,
   findPacienteByDni,
   findPrimeraClinicaByMedico,
-  medicoTieneClinica,
   upsertPacienteVinculo,
   ensureObraSocialByNombre,
   pacienteVinculadoAMedico,
@@ -28,6 +25,9 @@ const { listTurnosByPaciente } = require('../turnos/turnos.repository')
 const { sendRecetaSolicitudEmail, sendPacienteMensajeEmail } = require('../../utils/mailer')
 const { assertMembershipNotExpiredByMedicoId } = require('../membresias/membresias.service')
 const { registerPaciente } = require('../auth/auth.service')
+const acceso = require('../acceso/acceso.service')
+
+const { findMedicoIdByUserId } = acceso
 const {
   validateTextField,
   validatePhoneNumber,
@@ -38,35 +38,11 @@ const {
 } = require('../../utils/validators')
 
 /**
- * Resuelve sobre qué médico opera quien hace el pedido y valida los permisos.
+ * Resuelve sobre qué médico opera quien hace el pedido y valida los permisos
+ * (ver acceso.service). El asistente necesita no estar bloqueado.
  */
-async function resolveMedicoDestino({ idMedico, requesterIdUsuario, requesterRol }) {
-  let target = idMedico ? Number(idMedico) : null
-
-  if (!target && requesterRol === 'medico') {
-    target = Number(await findMedicoIdByUserId(requesterIdUsuario)) || null
-  }
-
-  if (!target) throw new HttpError(400, 'Se requiere id_medico como parámetro')
-
-  if (requesterRol === 'medico') {
-    const medicoPropio = await findMedicoIdByUserId(requesterIdUsuario)
-    if (!medicoPropio || Number(medicoPropio) !== target) {
-      throw new HttpError(403, 'Solo podés acceder a tus propios pacientes')
-    }
-  }
-
-  if (requesterRol === 'asistente') {
-    const allowed = await hasAsistenteAccessToMedico({
-      idUsuario: requesterIdUsuario,
-      idMedico: target,
-    })
-    if (!allowed) {
-      throw new HttpError(403, 'Solo podés acceder a pacientes de tu médico asignado')
-    }
-  }
-
-  return target
+function resolveMedicoDestino({ idMedico, requesterIdUsuario, requesterRol }) {
+  return acceso.resolverMedicoAccesible({ idMedico, requesterIdUsuario, requesterRol })
 }
 
 /**
@@ -138,7 +114,7 @@ async function createPacienteManual({ fields = {}, requesterIdUsuario, requester
 async function resolveClinicaVinculo({ idMedico, idClinica }) {
   if (idClinica) {
     const target = Number(idClinica)
-    if (!(await medicoTieneClinica({ idMedico, idClinica: target }))) {
+    if (!(await acceso.medicoAtiendeEnClinica({ idMedico, idClinica: target }))) {
       throw new HttpError(400, 'El consultorio indicado no pertenece al médico')
     }
     return target

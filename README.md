@@ -4,7 +4,7 @@ Agisad es una plataforma web para médicos, asistentes y pacientes que centraliz
 
 - Frontend: React 19 + Vite (`frontend/`)
 - Backend: Node.js + Express 5 + MySQL 8 (`backend/`)
-- Producción: frontend en `https://sigem.ar`, API en `https://api.sigem.ar`
+- Producción: frontend en `https://agisad.ar`, API en `https://api.agisad.ar`
 
 ## Índice
 
@@ -35,6 +35,7 @@ Agisad es una plataforma web para médicos, asistentes y pacientes que centraliz
 - Médico
 - Asistente / Secretaría
 - Gerente (clínica)
+- Propietario (alquila consultorios a médicos, sin atender pacientes)
 - Admin de plataforma (operación comercial y alta de médicos)
 
 ### Alcance V1
@@ -72,6 +73,8 @@ Agisad es una plataforma web para médicos, asistentes y pacientes que centraliz
 | **Intermedio** | Básico + autogestión de turnos, recordatorios por email, hasta 4 consultorios, hasta 1 asistente |
 | **Profesional** | Intermedio + reportes y métricas, auditoría avanzada, centro de notificaciones configurable, soporte prioritario, hasta 3 asistentes |
 | **Empresarial** | Profesional + multi-médico, multi-asistentes sin límite fijo, permisos por sede, integraciones y API, pasarela de pago configurable |
+
+Al registrarse solo se pueden elegir los planes públicos de cada rol (`PLANES_REGISTRABLES` en `membresias.service.js`): médico → Inicial, Medio, Profesional o Empresarial; gerente → Empresarial; propietario → Espacios. Los registros no crean planes: un código desconocido (o uno interno, como `legacy`) responde 400. Los gerentes se registran desde `/registro/profesional` eligiendo Empresarial.
 
 ---
 
@@ -113,6 +116,8 @@ El frontend requiere `VITE_API_BASE` apuntando a la API (`http://localhost:4000/
 | `npm run check` | Valida que la app cargue sin errores |
 | `npm run migrate` | Aplica migraciones SQL pendientes (registra en `migration_log`) |
 | `npm run seed` | Inserta datos demo |
+| `npm test` | Corre la suite de tests (Jest) |
+| `npm run test:coverage` | Tests con reporte de cobertura |
 
 ### Variables de entorno
 
@@ -128,63 +133,104 @@ El frontend requiere `VITE_API_BASE` apuntando a la API (`http://localhost:4000/
 | `TRUST_PROXY` | Confianza en el proxy reverso | `1` en producción, `false` fuera |
 | `RATE_LIMIT_WINDOW_MS` / `RATE_LIMIT_MAX` | Rate limit global | `900000` / `600` |
 | `LOGIN_RATE_LIMIT_WINDOW_MS` / `LOGIN_RATE_LIMIT_MAX` | Rate limit de login fallido | `600000` / `10` |
-| `MAIL_HOST`, `MAIL_PORT`, `MAIL_USER`, `MAIL_PASSWORD`, `MAIL_FROM` | SMTP para notificaciones | opcionales |
+| `RESEND_API_KEY` | API key de Resend (empieza con `re_`) | requerida fuera de `development` |
+| `MAIL_FROM` | Remitente por defecto | requerida fuera de `development` |
+| `MAIL_FROM_RECETAS` / `MAIL_FROM_TURNOS` | Remitentes de recetas/mensajes y de turnos/consultorios | `MAIL_FROM` |
 | `APP_TIMEZONE`, `APP_LOCALE` | Zona horaria y locale | requeridas |
 
 > `TRUST_PROXY` debe estar activo detrás de un proxy (Render, Nginx). Sin eso todas las requests comparten la misma IP y el rate limit se agota de forma global.
+
+> Mails: con `NODE_ENV=development` se imprimen en consola en vez de enviarse. En cualquier otro entorno, si falta `RESEND_API_KEY` o `MAIL_FROM`, el mailer lo avisa al arrancar y cada envío falla con un error explícito (no se pierden en silencio).
 
 ### Migraciones
 
 Los scripts viven en `backend/sql/` y se aplican en el orden declarado en `backend/src/scripts/migrate.js`. Cada archivo aplicado queda registrado en la tabla `migration_log`, por lo que `npm run migrate` es idempotente.
 
-Al agregar una migración nueva: crear el `.sql` numerado y sumarlo al array `MIGRATIONS`.
+Al agregar una migración nueva: crear el `.sql` numerado y sumarlo al array `MIGRATIONS`. El test `tests/unit/scripts/migrate.test.js` verifica que cada migración listada exista, esté en orden y se pueda partir en statements.
+
+> `010_hotfix_clinicas_virtual_link.sql` no está en la lista a propósito: la reemplazó `011`.
 
 ### Endpoints
 
-**Base**
+Todas las rutas cuelgan de `/api`. Entre paréntesis, los roles permitidos; "JWT" significa cualquier usuario autenticado. El detalle de parámetros y respuestas de cada una está cubierto por `backend/tests/routes/api.routes.test.js`.
+
+**Base** (públicas)
 
 - `GET /` — estado de la API
-- `GET /api/health` — estado de API + ping a la base
+- `GET /api/ping`
+- `GET /api/health` — estado de la API + ping a la base
 
-**Auth**
+**Auth** (`/api/auth`)
 
-- `POST /api/auth/login`
-- `POST /api/auth/register/paciente`
-- `POST /api/auth/register/medico`
-- `POST /api/auth/register/gerente`
-- `POST /api/auth/forgot-password`
-- `POST /api/auth/reset-password/:token`
+- `POST /login` — con rate limit de intentos fallidos
+- `GET /me` (JWT)
+- `POST /register/paciente` · `/register/medico` · `/register/gerente` · `/register/propietario`
+- `POST /forgot-password` · `POST /reset-password/:token`
+- `POST /verificar-email` · `POST /verificar-email/reenviar` — con rate limit
 
-**Médicos**
+**Médicos** (`/api/medicos`)
 
-- `GET /api/medicos`
-- `GET /api/medicos/:id_medico/disponibilidad?id_clinica=1&fecha=2026-05-23`
+- Públicas: `GET /` · `GET /:id_medico` · `GET /:id_medico/clinicas` · `GET /:id_medico/disponibilidad?id_clinica=&fecha=&duracion_minutos=` (slots de un día; cada slot trae `libre`, `bloqueado` y `excede_horario`) · `GET /:id_medico/disponibilidad-resumen?id_clinica=&desde=&hasta=&duracion_minutos=` (estado de cada día del rango, máx. 62 días; lo usa el calendario del paciente) · `GET /:id_medico/turnos-config`
+- Del médico autenticado (médico): `/me/clinicas` (GET, POST, PATCH/DELETE `/:id_clinica`) · `GET /me/disponibilidad` · `/me/turnos-config` (GET, PUT) · `/me/bloqueos` (GET, POST, PATCH/DELETE `/:id_excepcion`) · `GET /me/recetas-solicitudes` · `PATCH /me/recetas-solicitudes/:id_solicitud/estado` · `/me/mail-config` (GET, PUT) · `/me/tyc` (GET, POST)
 
-**Turnos** (requieren JWT)
+**Turnos** (`/api/turnos`)
 
-- `GET /api/turnos?id_medico=1&desde=2026-05-20&hasta=2026-05-30`
-- `POST /api/turnos`
-- `PATCH /api/turnos/:id_turno/estado`
+- `GET /mis` (paciente)
+- `GET /?id_medico=&desde=&hasta=` · `GET /historial` (médico, asistente, admin, gerente)
+- `POST /` (paciente, asistente, médico, admin)
+- `PATCH /:id_turno/cancelar` (paciente)
+- `PATCH /:id_turno/estado` (médico, asistente, admin)
 
-**Pacientes** (requieren JWT)
+**Pacientes** (`/api/pacientes`)
 
-- `GET /api/pacientes?id_medico=1` — médico / asistente / admin
-- `GET /api/pacientes/:id`
-- `PATCH /api/pacientes/:id` — paciente / admin
+- `GET /?id_medico=&q=` (médico, asistente, admin) · `POST /` alta manual (médico, asistente)
+- `GET /me` · `PATCH /me` · `GET /me/recetas` · `GET /me/mensajes` (paciente)
+- `GET /obras-sociales` (JWT)
+- `POST /medicos/:id_medico/recetas` · `POST /medicos/:id_medico/mensajes` · `GET /medicos/:id_medico/tyc` · `POST /medicos/:id_medico/tyc/aceptar` (paciente)
+- `GET /buscar-dni/:dni` (médico, asistente)
+- `GET /:id` (paciente, médico, asistente, admin) · `GET /:id/historial` (médico, admin) · `PATCH /:id` (paciente, médico, admin)
 
-**Asistentes** (requieren JWT)
+**Asistentes** (`/api/asistentes`)
 
-- `GET /api/asistentes?id_medico=1` — médico / admin
-- `GET /api/asistentes/:id`
-- `PATCH /api/asistentes/:id/permisos?id_medico=1` — médico / admin
+- `GET /me/access` (asistente)
+- `POST /` (médico, gerente, admin) — el médico siempre crea asistentes para sí mismo; el gerente, para médicos de sus clínicas
+- `GET /` · `GET /:id` · `PATCH /:id/permisos` (médico, admin) — el médico opera sobre sus propios asistentes sin indicar `id_medico`; el admin lo pasa en `?id_medico=`
 
-**Admin** (requieren JWT admin)
+**Gerentes** (`/api/gerentes`)
 
-- `GET /api/admin/usuarios?q=&rol=&suscripcion=`
-- `GET /api/admin/usuarios/:id_usuario`
-- `GET /api/admin/finanzas`
+- Gerente: `GET /me/clinicas` · `/invitaciones` (GET, POST, DELETE `/:id`) · `GET /medicos` · `DELETE /medicos/:id_medico?id_clinica=`
+- `GET /invitaciones/:token` (pública) · `POST /invitaciones/:token/aceptar` (JWT) · `POST /invitaciones/:token/registrar` (pública)
 
-Los endpoints protegidos esperan `Authorization: Bearer <token>`. Las altas y los cambios de estado de turnos se auditan en `turnos_historial`.
+**Consultorios en alquiler** (`/api/consultorios`)
+
+- Públicas: `GET /publicos` · `GET /:id_clinica/disponibilidad-publica?fecha=`
+- Dueño (propietario o médico): `GET /mios` · `GET /solicitudes/recibidas` · `PATCH /solicitudes/:id_solicitud/aprobar|rechazar` · `/:id_clinica/disponibilidad` (GET, PUT) · `GET /:id_clinica/medicos` · `DELETE /:id_clinica/medicos/:id_medico` · `GET /:id_clinica/reporte-uso?desde=&hasta=`
+- Propietario: `POST /`
+- Médico: `PATCH /:id_clinica/publicar` · `/adicional` (GET, POST, DELETE) · `GET /solicitudes/mias` · `POST /:id_clinica/solicitudes`
+
+**Admin** (`/api/admin`, solo admin)
+
+- `GET /usuarios?q=&rol=&suscripcion=` · `GET /usuarios/:id_usuario` · `GET /finanzas` · `POST /membresias/reactivar`
+
+Los endpoints protegidos esperan `Authorization: Bearer <token>`.
+
+### Acceso a los datos de un médico
+
+El rol habilita la ruta; **qué médico** se puede tocar lo decide un único lugar, `modules/acceso/acceso.service.js` (`resolverMedicoAccesible`), que usan turnos y pacientes:
+
+| Rol | Agenda y turnos (lectura) | Agendar / cambiar estado | Pacientes |
+|-----|---------------------------|--------------------------|-----------|
+| Médico | Solo la propia | Solo la propia | Solo los propios |
+| Asistente | Médicos que lo vincularon, con permiso `agenda` (aunque esté bloqueado) | Idem, sin estar bloqueado | Médicos que lo vincularon, sin estar bloqueado |
+| Gerente | Médicos que atienden en sus clínicas | — | — |
+| Admin | Cualquiera | Cualquiera | Cualquiera |
+
+Además, un turno solo se puede crear:
+
+- en un consultorio donde el médico atiende (`medico_clinicas`);
+- en un horario de la grilla que esté libre, no bloqueado y que **termine dentro del horario de atención**. Si el médico atiende hasta las 11:30, un turno de 120 minutos no se puede sacar a las 10:30. Franjas contiguas (9 a 11 y 11 a 13) cuentan como atención continua.
+
+Lo valida `verificarHorarioDisponible()` en `medicos.service.js`, con el mismo cálculo de slots que ve el paciente (`utils/slots.js`). Si el pedido no trae la duración, se usa la del tipo de turno y, si tampoco hay tipo, la estándar del médico. Los rechazos responden 409 con `details.code`: `EXCEDE_HORARIO`, `FUERA_DE_AGENDA`, `HORARIO_BLOQUEADO` o `TURNO_OVERLAP`. Las altas y los cambios de estado de turnos se auditan en `turnos_historial`.
 
 ---
 
@@ -198,17 +244,36 @@ React 19 + Vite con `@vitejs/plugin-react`. React Compiler no está habilitado p
 | `npm run build` | Build de producción |
 | `npm run preview` | Sirve el build |
 | `npm run lint` | ESLint |
+| `npm test` | Corre la suite de tests (Vitest) |
+| `npm run test:watch` | Tests en modo watch |
 
 Estructura principal en `frontend/src/`:
 
-- `pages/` — vistas por rol (`public`, `paciente`, `medico`, `asistente`, `gerente`, `admin`)
+- `pages/` — vistas por rol (`public`, `paciente`, `medico`, `asistente`, `gerente`, `propietario`, `admin`)
 - `layouts/` — layout por rol + layout público
 - `components/` — `ui`, `forms`, `layout`
 - `context/` — `AuthContext`, `ThemeContext` (modo día/noche)
 - `services/` — clientes de API sobre `apiClient.js`
 - `utils/` — formato de fechas, inputs inteligentes de fecha/hora
 
-Detalle de pantallas y flujos en [docs/wireframes-v1.md](docs/wireframes-v1.md) y [docs/estructura-frontend.md](docs/estructura-frontend.md).
+Detalle de pantallas y flujos en `docs/wireframes-v1.md` y `docs/estructura-frontend.md` (la carpeta `docs/` está en `.gitignore`: solo existe en copias locales).
+
+---
+
+## Tests
+
+| | Backend | Frontend |
+|---|---|---|
+| Herramienta | Jest + Supertest | Vitest + Testing Library (jsdom) |
+| Ubicación | `backend/tests/` | `frontend/tests/` |
+| Comando | `npm test` | `npm test` |
+
+Ninguna suite necesita base de datos, red ni `.env`:
+
+- **Backend.** `tests/setup-env.js` define variables de entorno de prueba y `dotenv` está mockeado, así que nunca se lee el `.env` real ni se mandan mails. Los services se prueban con los repositories mockeados; los repositories con transacciones, con una conexión falsa (`tests/helpers/fakeConnection.js`). `tests/routes/api.routes.test.js` recorre todas las rutas y verifica 401 sin token, 403 con roles no permitidos y los argumentos que cada controller le pasa al service. **Al agregar una ruta, sumarla a la tabla `ROUTES` de ese archivo.**
+- **Frontend.** `vite.config.js` fija `VITE_API_BASE` y la zona horaria para los tests, y `tests/setup.js` hace que cualquier `fetch` no mockeado falle. Las páginas se prueban con los `services/*.api.js` mockeados; `tests/helpers/render.jsx` monta router, tema y sesión.
+
+Lo que estos tests **no** cubren es el SQL en sí: para eso hace falta correr los repositories contra un MySQL real (por ejemplo, con Testcontainers en CI).
 
 ---
 
@@ -265,11 +330,12 @@ Las acciones que dependen de la membresía responden **HTTP 402 Payment Required
 |-----------|-----------------|
 | Login | `POST /turnos` (agendar) |
 | Ver y editar perfil propio | `GET /turnos` e historial cuando el requester es el médico |
-| Dashboard sin datos que requieran plan | `PATCH /turnos/:id_turno/estado` |
-| | `POST /pacientes/medicos/:id_medico/recetas` |
-| | `POST /pacientes/medicos/:id_medico/mensajes` |
+| Dashboard sin datos que requieran plan | `POST /pacientes/medicos/:id_medico/recetas` |
+| `PATCH /turnos/:id_turno/estado` (no valida membresía) | `POST /pacientes/medicos/:id_medico/mensajes` |
 
 Los pacientes no tienen membresía: en sus acciones se valida la del médico destinatario.
+
+Un médico invitado por un gerente puede no tener membresía propia: en ese caso `assertMembershipNotExpired()` usa la del gerente que lo cubre (`gerente_medico_beneficios`). Las acciones que exigen membresía **propia** (crear una clínica independiente, publicar un consultorio para alquiler) usan `assertOwnMembershipActive()`, que no acepta esa cobertura.
 
 ---
 
@@ -287,6 +353,7 @@ Los pacientes no tienen membresía: en sus acciones se valida la del médico des
 | Límite de payload | `app.js` | `1mb` en JSON y urlencoded |
 | SQL Injection | `db/query.js` | `mysql2/promise` con named placeholders, sin concatenación |
 | Autenticación | `auth.middleware.js` | JWT con expiración, `requireAuth` + `requireRoles` |
+| Acceso por médico | `acceso.service.js` | Ver "Acceso a los datos de un médico" |
 | Hash de contraseñas | `auth.service.js` | bcrypt |
 | TLS a la base | `db/pool.js` | `DB_SSL`, `DB_SSL_REJECT_UNAUTHORIZED`, `DB_SSL_CA` |
 | Validación de inputs | `utils/validators.js` | Ver sección siguiente |
@@ -307,6 +374,7 @@ Los errores devuelven mensajes genéricos donde corresponde (por ejemplo, "Crede
 - [x] SQL Injection protegido (prepared statements)
 - [x] Autenticación JWT
 - [x] Control de acceso por rol
+- [x] Control de acceso por médico (turnos, pacientes, asistentes)
 - [x] CORS configurado
 - [x] Hash de contraseñas (bcrypt)
 - [x] Rate limiting global + login
@@ -324,19 +392,19 @@ Los errores devuelven mensajes genéricos donde corresponde (por ejemplo, "Crede
 Módulo reutilizable en `backend/src/utils/validators.js`, aplicado en cada service (validación granular con mensajes específicos).
 
 ```javascript
-validateEmail(email)            // RFC 5322, máx. 255
+validateEmail(email)            // RFC 5322 simplificado, máx. 255
 validatePassword(password)      // 8+ chars, al menos una letra y un número
 validateDNI(dni)                // 7-8 dígitos
-validatePhoneNumber(telefono)   // 10-20 chars, dígitos y guiones
-validateName(nombre, field)     // Alfanumérico + espacios/acentos, máx. 100
-validateTextField(text, max)    // Longitud máxima
-validateMatricula(matricula)    // Alfanumérica, máx. 20
-validateDate(dateString)        // YYYY-MM-DD
-validateUsername(username)      // Alfanumérico + `_`, máx. 50
-sanitizeHTML(text)              // Escapa < > & " '
+validatePhoneNumber(telefono)   // Normaliza a E.164 (+549…); sin código de país asume Argentina y quita 0 y 15
+validateName(nombre, field)     // Letras, espacios, acentos, guiones y apóstrofes, máx. 100
+validateTextField(text, max)    // Longitud máxima (opcional u obligatorio)
+validateMatricula(matricula)    // Alfanumérica + / - . , máx. 20
+validateDate(dateString)        // YYYY-MM-DD y que la fecha exista (rechaza 2024-02-30)
 ```
 
-Los caracteres `<` y `>` se rechazan en campos de texto libre.
+Los campos de texto libre (`validateTextField`) no filtran caracteres: solo validan largo. La salida al navegador la escapa React.
+
+El frontend aplica la misma regla de contraseña antes de enviar (`frontend/src/utils/password.js`): si cambia una, tiene que cambiar la otra.
 
 ### Cobertura
 
@@ -347,7 +415,7 @@ Los caracteres `<` y `>` se rechazan en campos de texto libre.
 | `nombre` / `apellido` | auth, pacientes, medicos, gerentes | Alfanumérico + espacios | 100 | Sí |
 | `dni` | pacientes, medicos | 7-8 dígitos | 8 | Sí |
 | `matricula` | medicos | Alfanumérica + `/ - .` | 20 | Sí |
-| `telefono` | pacientes, medicos, gerentes | Dígitos y guiones | 20 | No |
+| `telefono` | pacientes, medicos, gerentes | Normalizado a E.164 (8 a 15 dígitos) | 25 | No |
 | `bio` | medicos | Texto libre | 500 | No |
 | `clinica_nombre` | gerentes | Texto libre | 100 | Sí |
 | `direccion` | gerentes | Texto libre | 200 | Sí |
@@ -383,10 +451,10 @@ validateName("Juan<script>")    → "El nombre contiene caracteres no válidos"
 
 Arquitectura y wireframes V1 definidos. Backend y frontend en construcción sobre la base descrita arriba.
 
-Documentación adicional:
+Documentación adicional (solo en copias locales: `docs/` no se versiona):
 
-- [docs/wireframes-v1.md](docs/wireframes-v1.md) — especificación de pantallas y flujos
-- [docs/estructura-frontend.md](docs/estructura-frontend.md) — estructura del frontend
-- [docs/sql/recomendaciones_flujo.md](docs/sql/recomendaciones_flujo.md) — recomendaciones de flujo de datos
+- `docs/wireframes-v1.md` — especificación de pantallas y flujos
+- `docs/estructura-frontend.md` — estructura del frontend
+- `docs/sql/recomendaciones_flujo.md` — recomendaciones de flujo de datos
 
 Licencia: ver [LICENSE](LICENSE).

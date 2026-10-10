@@ -43,12 +43,11 @@ export default function AccionesPage() {
 
     async function loadData() {
       try {
-        const [medicosRows, tyc] = await Promise.all([
-          medicosApi.list(''),
+        const [found, tyc] = await Promise.all([
+          medicosApi.getById(medicoId).catch(() => null),
           pacientesApi.getTycMedico(medicoId),
         ])
 
-        const found = (Array.isArray(medicosRows) ? medicosRows : []).find((m) => String(m.id) === String(medicoId))
         if (!cancelled) {
           if (found) {
             setMedico({

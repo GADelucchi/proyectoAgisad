@@ -32,18 +32,6 @@ async function findValidToken(tokenHash) {
 }
 
 /**
- * Marca el token como usado.
- */
-async function markTokenUsed(idToken) {
-  await query(
-    `UPDATE password_reset_tokens
-     SET usado_en = NOW()
-     WHERE id_token = :idToken`,
-    { idToken }
-  )
-}
-
-/**
  * Invalida todos los tokens pendientes del usuario (ej: al cambiar contraseña con éxito).
  */
 async function invalidateUserTokens(idUsuario) {
@@ -59,6 +47,5 @@ async function invalidateUserTokens(idUsuario) {
 module.exports = {
   createToken,
   findValidToken,
-  markTokenUsed,
   invalidateUserTokens,
 }

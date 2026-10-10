@@ -39,7 +39,7 @@ const SEO_BY_PATH = {
   '/login': { title: `Ingresar | ${SITE_NAME}`, noindex: true },
   // Alias de /registro/profesional: apunta a la URL preferida para no duplicar contenido.
   '/registro/medico': { title: `Registro para profesionales de la salud | ${SITE_NAME}`, noindex: true, canonical: '/registro/profesional' },
-  '/registro/gerente': { title: `Registro de clínicas | ${SITE_NAME}`, noindex: true },
+  '/registro/gerente': { title: `Registro para profesionales de la salud | ${SITE_NAME}`, noindex: true, canonical: '/registro/profesional' },
   '/verificar-email': { title: `Verificar email | ${SITE_NAME}`, noindex: true },
   '/recuperar-password': { title: `Recuperar contraseña | ${SITE_NAME}`, noindex: true },
 }

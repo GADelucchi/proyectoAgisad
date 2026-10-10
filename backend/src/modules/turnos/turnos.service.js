@@ -2,7 +2,9 @@ const HttpError = require('../../utils/httpError')
 const turnosRepo = require('./turnos.repository')
 const medicosRepo = require('../medicos/medicos.repository')
 const { assertMembershipNotExpiredByMedicoId } = require('../membresias/membresias.service')
-const { validateTextField } = require('../../utils/validators')
+const acceso = require('../acceso/acceso.service')
+const medicosService = require('../medicos/medicos.service')
+const { validateTextField, validateDate } = require('../../utils/validators')
 const { sendTurnoNuevoEmail, sendTurnoCanceladoEmail } = require('../../utils/mailer')
 
 const ESTADOS_VALIDOS = new Set([
@@ -45,11 +47,20 @@ async function crearTurno(input, authUser) {
       throw new HttpError(400, `Falta el campo obligatorio: ${field}`)
     }
   }
+  validateDate(input.fecha, 'La fecha')
 
-  // El médico solo puede agendar en su propia agenda, sin importar lo que mande el body.
+  // El paciente puede pedir turno con cualquier médico. El resto agenda en
+  // nombre de un médico y tiene que tener acceso a su agenda: el médico solo
+  // en la propia (sin importar lo que mande el body), el asistente en la de
+  // un médico que lo vinculó y sin estar bloqueado.
   let idMedico = input.id_medico ? Number(input.id_medico) : null
-  if (authUser?.rol === 'medico') {
-    idMedico = Number(await turnosRepo.findMedicoIdByUserId(authUser.idUsuario)) || null
+  if (authUser?.rol !== 'paciente') {
+    idMedico = await acceso.resolverMedicoAccesible({
+      idMedico: authUser?.rol === 'medico' ? null : idMedico,
+      requesterIdUsuario: authUser?.idUsuario,
+      requesterRol: authUser?.rol,
+      permiso: 'agenda',
+    })
   }
 
   if (!idMedico) {
@@ -75,6 +86,10 @@ async function crearTurno(input, authUser) {
 
   // Validar que el médico tenga membresía activa
   await assertMembershipNotExpiredByMedicoId(idMedico, 'No es posible agendar turnos')
+
+  if (!(await acceso.medicoAtiendeEnClinica({ idMedico, idClinica: Number(input.id_clinica) }))) {
+    throw new HttpError(400, 'El consultorio indicado no corresponde al médico')
+  }
 
   // En un consultorio alquilado, además del médico tiene que estar al día el
   // dueño del espacio: si se le venció la membresía o dio de baja el adicional,
@@ -103,6 +118,17 @@ async function crearTurno(input, authUser) {
     }
   }
 
+  // El turno tiene que entrar en la agenda: horario de la grilla, libre y
+  // terminando dentro del horario de atención. Si no viene la duración, manda
+  // la del tipo de turno y, si tampoco hay tipo, la estándar del médico.
+  const { duracionMinutos } = await medicosService.verificarHorarioDisponible({
+    idMedico,
+    idClinica: Number(input.id_clinica),
+    fecha: input.fecha,
+    hora: input.hora,
+    duracionMinutos: Number(input.duracion_minutos) || Number(tipoTurnoInfo?.duracion_minutos) || null,
+  })
+
   try {
     const idTurno = await turnosRepo.insertTurno({
       idPaciente,
@@ -113,7 +139,7 @@ async function crearTurno(input, authUser) {
       fecha: input.fecha,
       hora: input.hora,
       motivoConsulta: validatedMotivo,
-      duracionMinutos: input.duracion_minutos ? Number(input.duracion_minutos) : null,
+      duracionMinutos,
       modificadoPor: authUser?.idUsuario || null,
     })
 
@@ -158,6 +184,18 @@ async function cambiarEstado(idTurno, estadoNuevo, authUser, motivo) {
     throw new HttpError(400, 'Estado de turno invalido')
   }
 
+  const turno = await turnosRepo.findTurnoById(Number(idTurno))
+  if (!turno) {
+    throw new HttpError(404, 'Turno no encontrado')
+  }
+
+  await acceso.resolverMedicoAccesible({
+    idMedico: turno.id_medico,
+    requesterIdUsuario: authUser?.idUsuario,
+    requesterRol: authUser?.rol,
+    permiso: 'agenda',
+  })
+
   const updated = await turnosRepo.updateTurnoEstado({
     idTurno: Number(idTurno),
     estadoNuevo,
@@ -184,18 +222,14 @@ async function listarPorMedico({ idMedico, desde, hasta, requesterIdUsuario, req
     throw new HttpError(400, 'desde y hasta son obligatorios')
   }
 
-  let resolvedIdMedico = idMedico ? Number(idMedico) : null
-
-  if (!resolvedIdMedico && requesterRol === 'medico') {
-    resolvedIdMedico = await turnosRepo.findMedicoIdByUserId(requesterIdUsuario)
-    if (!resolvedIdMedico) {
-      throw new HttpError(404, 'Medico no encontrado')
-    }
-  }
-
-  if (!resolvedIdMedico) {
-    throw new HttpError(400, 'id_medico es obligatorio para este rol')
-  }
+  // Leer la agenda: un asistente bloqueado la puede ver; un gerente, la de sus médicos.
+  const resolvedIdMedico = await acceso.resolverMedicoAccesible({
+    idMedico,
+    requesterIdUsuario,
+    requesterRol,
+    permiso: 'agenda',
+    permitirBloqueado: true,
+  })
 
   // Si quien solicita es el médico, validar que tenga membresía activa
   if (requesterRol === 'medico') {
@@ -210,18 +244,14 @@ async function listarHistorialPorMedico({ idMedico, desde, hasta, requesterIdUsu
     throw new HttpError(400, 'desde y hasta son obligatorios')
   }
 
-  let resolvedIdMedico = idMedico ? Number(idMedico) : null
-
-  if (!resolvedIdMedico && requesterRol === 'medico') {
-    resolvedIdMedico = await turnosRepo.findMedicoIdByUserId(requesterIdUsuario)
-    if (!resolvedIdMedico) {
-      throw new HttpError(404, 'Medico no encontrado')
-    }
-  }
-
-  if (!resolvedIdMedico) {
-    throw new HttpError(400, 'id_medico es obligatorio para este rol')
-  }
+  // Leer la agenda: un asistente bloqueado la puede ver; un gerente, la de sus médicos.
+  const resolvedIdMedico = await acceso.resolverMedicoAccesible({
+    idMedico,
+    requesterIdUsuario,
+    requesterRol,
+    permiso: 'agenda',
+    permitirBloqueado: true,
+  })
 
   // Si quien solicita es el médico, validar que tenga membresía activa
   if (requesterRol === 'medico') {

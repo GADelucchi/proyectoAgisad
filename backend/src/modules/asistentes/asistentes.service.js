@@ -6,15 +6,17 @@ const {
   listAsistentesByMedico,
   findAsistenteById,
   upsertPermisos,
-  findMedicoIdByUserId,
   findGerenteIdByUserId,
   findClinicasByMedicoId,
   findClinicasByGerenteId,
   insertAsistenteClinica,
+  asistenteVinculadoAMedico,
   findAsistenteIdByUserId,
   findAsistenteAccessByUserId,
 } = require('./asistentes.repository')
 const { assertUserFeatureByUserId, assertMedicoFeatureByMedicoId } = require('../membresias/membresias.service')
+const acceso = require('../acceso/acceso.service')
+const { validateEmail, validatePassword, validateName, validatePhoneNumber } = require('../../utils/validators')
 
 function normalizeText(value) {
   return typeof value === 'string' ? value.trim() : ''
@@ -43,9 +45,12 @@ async function ensureUsername(email, desiredUsername) {
   return username
 }
 
-async function listAsistentes({ idMedico, requesterIdUsuario, requesterRol }) {
-  const target = Number(idMedico)
-  if (!target) throw new HttpError(400, 'Se requiere id_medico como parámetro')
+/**
+ * Médico sobre cuyos asistentes se opera: el médico, siempre el propio
+ * (id_medico es opcional); el admin, el que indique.
+ */
+async function resolveMedicoDeAsistentes({ idMedico, requesterIdUsuario, requesterRol }) {
+  const target = await acceso.resolverMedicoAccesible({ idMedico, requesterIdUsuario, requesterRol })
 
   await assertMedicoFeatureByMedicoId({
     idMedico: target,
@@ -53,13 +58,11 @@ async function listAsistentes({ idMedico, requesterIdUsuario, requesterRol }) {
     denyMessage: 'Tu plan actual no permite gestionar asistentes',
   })
 
-  if (requesterRol === 'medico') {
-    const medicoPropio = await findMedicoIdByUserId(requesterIdUsuario)
-    if (!medicoPropio || Number(medicoPropio) !== target) {
-      throw new HttpError(403, 'Solo podés listar tus asistentes')
-    }
-  }
+  return target
+}
 
+async function listAsistentes({ idMedico, requesterIdUsuario, requesterRol }) {
+  const target = await resolveMedicoDeAsistentes({ idMedico, requesterIdUsuario, requesterRol })
   return listAsistentesByMedico(target)
 }
 
@@ -71,30 +74,30 @@ async function getAsistente({ idAsistente, requesterIdUsuario, requesterRol }) {
     }
   }
 
+  // Un médico solo ve a los asistentes que él vinculó.
+  if (requesterRol === 'medico') {
+    const idMedico = await acceso.resolverMedicoAccesible({ requesterIdUsuario, requesterRol })
+    if (!(await asistenteVinculadoAMedico({ idAsistente: Number(idAsistente), idMedico }))) {
+      throw new HttpError(404, 'Asistente no encontrado')
+    }
+  }
+
   const asistente = await findAsistenteById(Number(idAsistente))
   if (!asistente) throw new HttpError(404, 'Asistente no encontrado')
   return asistente
 }
 
 async function patchPermisos({ idAsistente, idMedico, permisos, requesterIdUsuario, requesterRol }) {
-  const target = Number(idMedico)
-  if (!target) throw new HttpError(400, 'id_medico es obligatorio')
-
-  await assertMedicoFeatureByMedicoId({
-    idMedico: target,
-    feature: 'permite_asistentes',
-    denyMessage: 'Tu plan actual no permite gestionar asistentes',
-  })
-
-  if (requesterRol === 'medico') {
-    const medicoPropio = await findMedicoIdByUserId(requesterIdUsuario)
-    if (!medicoPropio || Number(medicoPropio) !== target) {
-      throw new HttpError(403, 'Solo podés modificar permisos de tus asistentes')
-    }
-  }
+  const target = await resolveMedicoDeAsistentes({ idMedico, requesterIdUsuario, requesterRol })
 
   const asistente = await findAsistenteById(Number(idAsistente))
   if (!asistente) throw new HttpError(404, 'Asistente no encontrado')
+
+  // El médico solo cambia permisos de asistentes que ya vinculó: no puede
+  // "adoptar" al asistente de otro médico.
+  if (requesterRol !== 'admin' && !(await asistenteVinculadoAMedico({ idAsistente: Number(idAsistente), idMedico: target }))) {
+    throw new HttpError(404, 'Asistente no encontrado')
+  }
 
   await upsertPermisos(Number(idAsistente), target, permisos)
 
@@ -106,6 +109,35 @@ async function patchPermisos({ idAsistente, idMedico, permisos, requesterIdUsuar
   return rows[0] || null
 }
 
+/**
+ * Médico al que queda vinculado el asistente nuevo y clínicas que puede usar,
+ * según quién lo crea: el médico, para sí mismo y en sus clínicas; el gerente,
+ * para un médico de su equipo (opcional) y en sus clínicas; el admin, libre.
+ */
+async function resolveDestinoAsistente(input, requester) {
+  const rol = requester?.rol
+  const pedido = input.id_medico ? Number(input.id_medico) : null
+
+  if (rol === 'medico') {
+    const idMedico = Number(await acceso.findMedicoIdByUserId(requester.idUsuario)) || null
+    if (!idMedico) throw new HttpError(403, 'No se pudo resolver el médico autenticado')
+    const clinicas = await findClinicasByMedicoId(idMedico)
+    return { idMedico, clinicasPermitidas: clinicas.map((row) => Number(row.id_clinica)) }
+  }
+
+  if (rol === 'gerente') {
+    const idGerente = await findGerenteIdByUserId(requester.idUsuario)
+    if (!idGerente) throw new HttpError(403, 'No se pudo resolver el gerente autenticado')
+    if (pedido && !(await acceso.gerenteTieneMedico({ idUsuario: requester.idUsuario, idMedico: pedido }))) {
+      throw new HttpError(403, 'Ese médico no atiende en tus clínicas')
+    }
+    const clinicas = await findClinicasByGerenteId(idGerente)
+    return { idMedico: pedido, clinicasPermitidas: clinicas.map((row) => Number(row.id_clinica)) }
+  }
+
+  return { idMedico: pedido, clinicasPermitidas: null }
+}
+
 async function createAsistente(input, requester) {
   const required = ['email', 'password', 'nombre', 'apellido']
   for (const field of required) {
@@ -114,67 +146,60 @@ async function createAsistente(input, requester) {
     }
   }
 
+  const email = validateEmail(input.email)
+  const password = validatePassword(input.password)
+  const nombre = validateName(input.nombre, 'El nombre')
+  const apellido = validateName(input.apellido, 'El apellido')
+  const telefono = validatePhoneNumber(input.telefono, false)
+
+  if (requester?.rol === 'medico' || requester?.rol === 'gerente') {
+    await assertUserFeatureByUserId({
+      idUsuario: requester.idUsuario,
+      feature: 'permite_asistentes',
+      denyMessage: 'Tu plan actual no permite gestionar asistentes',
+    })
+  }
+
+  const { idMedico, clinicasPermitidas } = await resolveDestinoAsistente(input, requester)
+
+  const pedidas = (Array.isArray(input.clinic_ids) ? input.clinic_ids : []).map(Number).filter(Boolean)
+  const clinicIds = clinicasPermitidas
+    ? (pedidas.length > 0 ? pedidas.filter((id) => clinicasPermitidas.includes(id)) : clinicasPermitidas)
+    : pedidas
+
+  const roleId = await findRoleIdByName('asistente')
+  if (!roleId) {
+    throw new HttpError(500, 'No existe el rol asistente. Cargar datos base primero')
+  }
+
+  const username = await ensureUsername(email, input.username)
+  const hashedPassword = await bcrypt.hash(password, 10)
+
   const conn = await pool.getConnection()
 
   try {
     await conn.beginTransaction()
 
-    const roleId = await findRoleIdByName('asistente')
-    if (!roleId) {
-      throw new HttpError(500, 'No existe el rol asistente. Cargar datos base primero')
-    }
-
-    const username = await ensureUsername(input.email, input.username)
-    const hashedPassword = await bcrypt.hash(input.password, 10)
-
     const [userResult] = await conn.execute(
       `INSERT INTO usuarios (id_rol, username, email, password_hash, email_verificado, activo)
        VALUES (?, ?, ?, ?, 0, 1)`,
-      [roleId, username, input.email, hashedPassword]
+      [roleId, username, email, hashedPassword]
     )
 
     const [asistenteResult] = await conn.execute(
       `INSERT INTO asistentes (id_usuario, nombre, apellido, telefono)
        VALUES (?, ?, ?, ?)`,
-      [userResult.insertId, input.nombre, input.apellido, input.telefono || null]
+      [userResult.insertId, nombre, apellido, telefono]
     )
 
-    const requesterRole = requester?.rol || 'medico'
-
-    if (requesterRole === 'medico' || requesterRole === 'gerente') {
-      await assertUserFeatureByUserId({
-        idUsuario: requester.idUsuario,
-        feature: 'permite_asistentes',
-        denyMessage: 'Tu plan actual no permite gestionar asistentes',
-      })
-    }
-
-    let clinicIds = Array.isArray(input.clinic_ids) ? input.clinic_ids : []
-    clinicIds = clinicIds.map((id) => Number(id)).filter(Boolean)
-
-    if (clinicIds.length === 0) {
-      if (requesterRole === 'medico') {
-        const idMedico = await findMedicoIdByUserId(requester.idUsuario)
-        if (!idMedico) throw new HttpError(403, 'No se pudo resolver el médico autenticado')
-        const rows = await findClinicasByMedicoId(idMedico)
-        clinicIds = rows.map((row) => Number(row.id_clinica)).filter(Boolean)
-      } else if (requesterRole === 'gerente') {
-        const idGerente = await findGerenteIdByUserId(requester.idUsuario)
-        if (!idGerente) throw new HttpError(403, 'No se pudo resolver el gerente autenticado')
-        const rows = await findClinicasByGerenteId(idGerente)
-        clinicIds = rows.map((row) => Number(row.id_clinica)).filter(Boolean)
-      }
-    }
-
+    // Todo en la misma conexión: asistente_clinicas y asistente_permisos tienen
+    // FK a asistentes, y desde otra conexión la fila todavía no confirmada no se ve.
     for (const idClinica of clinicIds) {
-      await insertAsistenteClinica(asistenteResult.insertId, idClinica)
+      await insertAsistenteClinica(asistenteResult.insertId, idClinica, conn)
     }
 
-    const permisos = getDefaultPermisos(input.permisos)
-    const targetMedicoId = input.id_medico ? Number(input.id_medico) : null
-
-    if (targetMedicoId) {
-      await upsertPermisos(asistenteResult.insertId, targetMedicoId, permisos)
+    if (idMedico) {
+      await upsertPermisos(asistenteResult.insertId, idMedico, getDefaultPermisos(input.permisos), conn)
     }
 
     await conn.commit()
@@ -183,10 +208,10 @@ async function createAsistente(input, requester) {
       id_usuario: userResult.insertId,
       id_asistente: asistenteResult.insertId,
       username,
-      email: input.email,
+      email,
       rol: 'asistente',
       clinic_ids: clinicIds,
-      id_medico: targetMedicoId,
+      id_medico: idMedico,
     }
   } catch (err) {
     await conn.rollback()

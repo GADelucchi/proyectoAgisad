@@ -238,55 +238,15 @@ function validateDate(dateString, fieldName = 'La fecha') {
     throw new HttpError(400, `${fieldName} debe estar en formato YYYY-MM-DD`)
   }
 
-  // Verificar que sea una fecha válida
-  const date = new Date(`${trimmed}T00:00:00Z`)
-  if (Number.isNaN(date.getTime())) {
+  // Verificar que la fecha exista: JS "corrige" 2024-02-30 a 2024-03-01 en vez
+  // de fallar, así que se compara contra los componentes originales.
+  const [year, month, day] = trimmed.split('-').map(Number)
+  const date = new Date(Date.UTC(year, month - 1, day))
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
     throw new HttpError(400, `${fieldName} no es una fecha válida`)
   }
 
   return trimmed
-}
-
-/**
- * Escapa caracteres peligrosos para prevenir XSS
- * @param {string} text
- * @returns {string} Texto escapado
- */
-function sanitizeHTML(text) {
-  if (!text) return text
-
-  const replacements = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#x27;',
-  }
-
-  return String(text).replace(/[&<>"']/g, (char) => replacements[char])
-}
-
-/**
- * Sanitiza y valida un nombre de usuario
- * @param {string} username
- * @throws {HttpError} Si no es válido
- */
-function validateUsername(username) {
-  const trimmed = String(username || '').trim()
-
-  if (!trimmed) {
-    throw new HttpError(400, 'El usuario es obligatorio')
-  }
-
-  if (trimmed.length < 3 || trimmed.length > 50) {
-    throw new HttpError(400, 'El usuario debe tener entre 3 y 50 caracteres')
-  }
-
-  if (!/^[a-zA-Z0-9_\-\.]+$/.test(trimmed)) {
-    throw new HttpError(400, 'El usuario solo puede contener letras, números, guiones, puntos y guiones bajos')
-  }
-
-  return trimmed.toLowerCase()
 }
 
 module.exports = {
@@ -298,6 +258,4 @@ module.exports = {
   validateTextField,
   validateMatricula,
   validateDate,
-  sanitizeHTML,
-  validateUsername,
 }
